@@ -1,0 +1,152 @@
+{
+  "final_decision": "Pause",
+  "decision_rationale": "Four of five agents recommend Pause; one (Risk/Critic) recommends Roll Back. The 10-day data shows a clear pattern: a significant degradation on Days 5-6, followed by partial recovery after the Day 7 hotfix. By Day 10, crash rate (0.95%) and latency (290ms) are trending toward thresholds but have not yet consistently met them. Three of nine metrics still breach success criteria. The critical draft-loss bug (KI-001) remains open and poses unacceptable data-integrity risk. Feature funnel completion (28.5%) and funnel completion (28.5%) are strong positive signals that argue against a full rollback. Pausing at 25% limits the blast radius to ~130,000 users while preserving the ability to resume quickly. The pause is conditional on shipping the KI-001 fix and opt-out toggle before any further expansion.",
+  "individual_verdicts": [
+    {
+      "agent": "Product Manager",
+      "role": "pm",
+      "decision": "Pause",
+      "confidence": 0.72,
+      "rationale": "Day 10 signup conversion (3.8%) has recovered to the threshold (3.8%), but D1 retention at 68.0% barely meets the 68.0% criterion. D7 retention at 39.2% is below the 42.0% target \u2014 a concerning signal for long-term value. Feature funnel completion at 28.5% is strong and exceeds the 20.0% target. The missing opt-out toggle (KI-004) is a significant friction source. Recommend pausing at 25% until the opt-out ships and D7 retention stabilises.",
+      "key_evidence": [
+        "Signup conversion Day 10: 3.8% (threshold: 3.8%)",
+        "D7 retention: 39.2% \u2014 below 42.0% target",
+        "Feature funnel completion: 28.5% \u2014 strong signal",
+        "Total cancellations over 10 days: 335 (34/day vs 10/day baseline)"
+      ],
+      "recommended_actions": [
+        "Freeze rollout at 25% \u2014 do not expand to the 50% cohort.",
+        "Expedite the opt-out toggle (KI-004) before any further expansion.",
+        "Run a D7 retention deep-dive to separate performance-driven churn from feature-driven churn."
+      ],
+      "dissent_notes": null
+    },
+    {
+      "agent": "Data Analyst",
+      "role": "data_analyst",
+      "decision": "Pause",
+      "confidence": 0.82,
+      "rationale": "Crash rate peaked at 2.4% on Day 6 (6.9x baseline, threshold 0.75%). Post-hotfix recovery is clear: Day 10 crash rate 0.95% is above the 0.75% threshold. P95 latency peaked at 485ms (Day 6), now 290ms \u2014 within the 300ms target. Payment success rate dipped to 97.8% on Day 6 (threshold: 99.0%). Now at 99.2%. Support tickets peaked at 289/day (Day 6) vs 38/day baseline. Now 155/day \u2014 still elevated. D7 retention (39.2%) is 5.8pp below baseline (45.0%) \u2014 statistically significant. Trends are recovering but 3 of 9 metrics still breach thresholds.",
+      "key_evidence": [
+        "Crash rate: peaked 2.4% \u2192 now 0.95% (threshold: 0.75%)",
+        "P95 latency: peaked 485ms \u2192 now 290ms (threshold: 300ms)",
+        "Payment success: dipped to 97.8%, now 99.2%",
+        "Support tickets: peaked 289/day, now 155/day (baseline: 38)",
+        "D7 retention: 39.2% vs 45.0% baseline (-5.8pp)",
+        "DAU recovered: 131,000 (baseline-scaled: ~130,000)",
+        "Churn: peaked 58/day (Day 6), now 31/day (baseline: 10)"
+      ],
+      "recommended_actions": [
+        "Hold at 25% rollout until crash rate < 0.75% for 3 consecutive days.",
+        "Set automated monitoring gate: all 9 metrics must be within thresholds for 48h before expansion.",
+        "Run root-cause analysis on the Day 5-6 crash/latency spike correlation.",
+        "Track D7 retention for the Day 3-4 cohort (data available Day 10-11) to confirm trend."
+      ],
+      "dissent_notes": null
+    },
+    {
+      "agent": "Marketing & Comms",
+      "role": "marketing_comms",
+      "decision": "Pause",
+      "confidence": 0.7,
+      "rationale": "Of 35 feedback entries: 10 positive, 18 negative, 7 neutral. Negative feedback is concentrated on Days 4-6 (the trouble window) and clusters around 3 recurring themes: (1) performance/lag \u2014 6 mentions, (2) no opt-out \u2014 5 mentions, (3) draft data loss \u2014 3 mentions. Two high-impact outliers: a user with a disability praising the feature (#35) and a sales email auto-complete incident that could have cost a deal (#34). App store ratings are polarised (1-star and 5-star). Reddit thread about draft data loss (PSA post) has amplification risk. Sentiment is skewed negative in the Days 4-6 window. Post-hotfix sentiment (Days 8-10) is more positive, but the missing opt-out toggle is a persistent irritant across all channels.",
+      "key_evidence": [
+        "Feedback: 10 positive / 18 negative / 7 neutral across 6 channels",
+        "Top repeated issue: performance/lag (6 mentions across in-app, support, Twitter)",
+        "Top repeated issue: no opt-out toggle (5 mentions across in-app, support, Twitter, Reddit)",
+        "Critical outlier: draft data loss creating PSA-style Reddit post (amplification risk)",
+        "Critical outlier: sales email auto-complete incident \u2014 potential enterprise deal risk",
+        "Positive outlier: accessibility user (#35) \u2014 strong advocacy potential if feature preserved",
+        "App store: polarised 1-star / 5-star reviews"
+      ],
+      "recommended_actions": [
+        "Issue transparent status update: acknowledge performance issues, draft-loss bug, and opt-out gap.",
+        "Respond personally to the Twitter auto-complete complaints with empathy and DM follow-up.",
+        "Prepare accessibility-focused case study with user #35's permission \u2014 powerful positive narrative.",
+        "Do NOT run any promotional campaigns for Smart Compose until opt-out toggle ships.",
+        "Monitor Reddit thread on draft loss \u2014 if it trends, issue an official response."
+      ],
+      "dissent_notes": null
+    },
+    {
+      "agent": "Risk / Critic",
+      "role": "risk_critic",
+      "decision": "Roll Back",
+      "confidence": 0.68,
+      "rationale": "KI-001 (draft data loss) remains in 'investigating' status after 10 days \u2014 this is a critical severity bug that has been reported by 3 separate users and amplified on Reddit. At 25% rollout (130,000 users exposed), the blast radius for a data-loss bug is unacceptable. Cancellations averaged 34/day over 10 days vs 10/day baseline \u2014 a 3.4x increase that would scale further at full rollout. D7 retention at 39.2% is below the 42.0% threshold \u2014 the feature may be driving users away. The Day 7 hotfix improved latency but crash rate (0.95%) still exceeds the 0.75% threshold. Extrapolating to 50% rollout carries infrastructure risk given KI-002's partial fix status. The team may be anchored on the recovery trend rather than the absolute breach of success criteria.",
+      "key_evidence": [
+        "KI-001 (critical): draft data loss \u2014 still 'investigating' after 10 days",
+        "Churn: 335 cancellations in 10 days (34/day vs 10/day baseline)",
+        "D7 retention: 39.2% < 42.0% target",
+        "Crash rate Day 10: 0.95% \u2014 still above 0.75% threshold",
+        "Payment success dip to 97.8% signals infrastructure fragility",
+        "3 of 9 metrics still breaching thresholds on Day 10"
+      ],
+      "recommended_actions": [
+        "Roll back to pre-launch state for the 25% cohort \u2014 data-loss risk is too high.",
+        "If rollback is rejected: freeze at 25%, mandate KI-001 fix within 48h, add opt-out toggle.",
+        "Commission independent review of the inference API scaling before any expansion.",
+        "Conduct blameless post-incident review covering the Day 5-6 degradation."
+      ],
+      "dissent_notes": "The majority leans toward Pause, but pausing at 25% still exposes ~130k users to a data-loss bug (KI-001) with no confirmed fix. The recovery trend is only 3 days old (Day 7 hotfix) and has not been stress-tested at higher rollout. The draft-disappearing bug alone warrants rollback \u2014 it is a trust-destroying event and 3 users have already reported it. If even 0.1% of the 130k cohort experiences data loss, that's 130 affected users with high churn and social amplification risk."
+    },
+    {
+      "agent": "Engineering Lead",
+      "role": "engineering_lead",
+      "decision": "Pause",
+      "confidence": 0.76,
+      "rationale": "The Day 7 hotfix materially improved performance: latency dropped from 485ms \u2192 290ms (1.5x baseline, within the 300ms target). Crash rate improved from 2.4% \u2192 0.95% but still exceeds the 0.75% threshold. KI-001 (draft loss race condition) is the highest-priority item \u2014 root cause is identified (auto-save debounce vs suggestion overlay teardown) and a fix is feasible in 24-48h. KI-002 (latency scaling) hotfix is deployed; further tuning requires load testing at 50% traffic before expansion. KI-004 (opt-out toggle) is ~4 engineering days from ship. Full rollback is costly (~6 engineer-hours + deployment risk + user confusion) and would lose the 28.5% adoption signal. A pause + targeted fixes is the better path.",
+      "key_evidence": [
+        "Latency: 485ms (Day 6) \u2192 290ms (Day 10) \u2014 hotfix working",
+        "Crash rate: 2.4% \u2192 0.95% \u2014 improving but still above 0.75%",
+        "KI-001 root cause identified: race condition in auto-save debounce \u2014 fix ETA 24-48h",
+        "KI-002 hotfix deployed Day 7; needs load test at 50% before expansion",
+        "KI-004 opt-out toggle: ~4 engineering days (aligns with v4.12.1 plan)",
+        "Rollback cost: ~6 engineer-hours + deployment risk + loss of 28.5% funnel adoption cohort",
+        "Payment success recovered: 99.2% (correlated with latency fix)"
+      ],
+      "recommended_actions": [
+        "P0: Fix KI-001 (draft loss race condition) within 48h \u2014 add mutex on auto-save during overlay transitions.",
+        "P1: Run load test simulating 50% traffic against inference API before any expansion.",
+        "P1: Ship opt-out toggle (KI-004) \u2014 fast-track from v4.12.1 plan.",
+        "Freeze rollout at 25% with automated gate: crash_rate < 0.75% AND latency < 300ms for 72h.",
+        "Add server-side draft backup as defence-in-depth against future data-loss regressions."
+      ],
+      "dissent_notes": null
+    }
+  ],
+  "action_plan": [
+    "IMMEDIATE: Freeze rollout at 25% \u2014 block scheduled expansion to 50%.",
+    "IMMEDIATE (P0): Assign 2 engineers to KI-001 (draft loss race condition); target fix within 48h.",
+    "WITHIN 24h: Add server-side draft backup as defence-in-depth for data loss.",
+    "WITHIN 48h: Ship KI-001 fix and verify with targeted regression tests.",
+    "WITHIN 48h: Run inference API load test simulating 50% user traffic.",
+    "WITHIN 4 DAYS: Ship user-facing opt-out toggle (KI-004, fast-tracked from v4.12.1).",
+    "WITHIN 24h: Publish transparent status update across all channels (blog, in-app banner, social).",
+    "WITHIN 1 WEEK: Conduct blameless post-incident review of the Day 5-6 degradation.",
+    "GATE: Resume expansion to 50% ONLY when ALL of these are true for 72h: crash_rate < 0.75%, p95_latency < 300ms, KI-001 fix confirmed, opt-out toggle live."
+  ],
+  "risks_and_mitigations": [
+    "Risk: KI-001 data loss affects more users during pause \u2192 Mitigation: Server-side draft backup within 24h + P0 fix in 48h.",
+    "Risk: Crash rate re-spikes when expanding past 25% \u2192 Mitigation: Load test at 50% before expansion; automated rollback trigger at 1.5%.",
+    "Risk: Negative sentiment compounds (Reddit PSA, app-store 1-stars) \u2192 Mitigation: Transparent comms + personal outreach to vocal critics.",
+    "Risk: D7 retention continues declining \u2192 Mitigation: Deep-dive analysis separating performance-churn from feature-churn; opt-out toggle unblocks users who don't want the feature.",
+    "Risk: Pause drags beyond 1 week, losing launch momentum \u2192 Mitigation: Clear 72h gate criteria with daily war-room check-ins.",
+    "Risk: Payment success rate degrades again under load \u2192 Mitigation: Isolate payment service from inference API; independent scaling policy."
+  ],
+  "follow_up_monitoring": [
+    "Crash rate \u2014 target: < 0.75% for 72 consecutive hours",
+    "P95 latency \u2014 target: < 300ms for 72 consecutive hours",
+    "D1 retention \u2014 target: \u2265 68% (currently at threshold)",
+    "D7 retention \u2014 target: \u2265 42% (track Day 3-4 cohort maturing on Days 10-11)",
+    "Support ticket volume \u2014 target: \u2264 80/day per 5% cohort-equivalent",
+    "Payment success rate \u2014 target: \u2265 99.0%",
+    "KI-001 recurrence \u2014 zero tolerance after fix deployment",
+    "Churn/cancellations \u2014 target: \u2264 15/day (currently 31/day, baseline 10/day)",
+    "NPS and CSAT \u2014 daily tracking; resume gate requires CSAT \u2265 3.8",
+    "Social media sentiment \u2014 daily scan; escalate if negative trend resumes"
+  ],
+  "dissenting_opinions": [
+    "Risk/Critic (Roll Back, 68% confidence): KI-001 (draft data loss) is still in 'investigating' status after 10 days and has been reported by 3 users with Reddit amplification. At 25% rollout, ~130,000 users are exposed to a data-loss bug with no confirmed fix. The recovery trend is only 3 days old and untested at higher scale. Pausing still leaves users in a degraded state \u2014 a full rollback protects user trust while the team ships fixes and re-launches cleanly."
+  ]
+}
