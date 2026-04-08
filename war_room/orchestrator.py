@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 
 from .agents import PHASE1_AGENTS, RiskCriticAgent, BaseAgent, format_verdicts_summary
 from .models import AgentVerdict, Decision, WarRoomOutcome
+from .trace import trace, reset_trace, get_trace
 
 
 class WarRoom:
@@ -241,6 +242,8 @@ class WarRoom:
 
     def run(self, dashboard: dict, verbose: bool = True) -> WarRoomOutcome:
         """Execute the full 3-phase war-room session and return the outcome."""
+        reset_trace()
+        trace("orchestrator", "session", "War-room session started")
         if verbose:
             print("=" * 60)
             print("  WAR ROOM SESSION — Launch Decision")
@@ -251,11 +254,13 @@ class WarRoom:
             print(f"  Window  : {len(dashboard.get('daily_metrics', []))} days of data\n")
 
         # Phase 1 — Independent Analysis
+        trace("orchestrator", "phase_start", "Phase 1 — Independent Agent Analysis")
         if verbose:
             print("─" * 60)
             print("  Phase 1 — Independent Agent Analysis")
             print("─" * 60)
         initial_verdicts, p1_agents = self._phase1_analyze(dashboard)
+        trace("orchestrator", "phase_end", f"Phase 1 complete — {len(initial_verdicts)} verdicts collected")
         if verbose:
             self._log_tools(p1_agents)
             for v in initial_verdicts:
@@ -264,11 +269,13 @@ class WarRoom:
                 print(f"    Rationale: {v.rationale[:120]}...")
 
         # Phase 2a — Risk/Critic Challenge
+        trace("orchestrator", "phase_start", "Phase 2a — Risk/Critic Challenge")
         if verbose:
             print(f"\n{'─' * 60}")
             print("  Phase 2a — Risk/Critic Challenge")
             print("─" * 60)
         critique, critic_agent = self._phase2a_critique(dashboard, initial_verdicts)
+        trace("orchestrator", "phase_end", f"Phase 2a complete — critique: {critique.decision.value}")
         if verbose:
             self._log_tools([critic_agent])
             print(f"\n  [Risk / Critic]  →  {critique.decision.value}  "
@@ -276,11 +283,13 @@ class WarRoom:
             print(f"    Rationale: {critique.rationale[:200]}...")
 
         # Phase 2b — Revision
+        trace("orchestrator", "phase_start", "Phase 2b — Agent Revision (after deliberation)")
         if verbose:
             print(f"\n{'─' * 60}")
             print("  Phase 2b — Agent Revision (after deliberation)")
             print("─" * 60)
         revised_verdicts = self._phase2b_revise(dashboard, initial_verdicts, critique)
+        trace("orchestrator", "phase_end", f"Phase 2b complete — {len(revised_verdicts)} revised verdicts")
         if verbose:
             for v in revised_verdicts:
                 init = next((i for i in initial_verdicts if i.role == v.role), None)
@@ -292,9 +301,12 @@ class WarRoom:
                 print(f"    Rationale: {v.rationale[:120]}...")
 
         # Phase 3 — Director Synthesis
+        trace("orchestrator", "phase_start", "Phase 3 — Director / Senior PM Final Decision")
         if verbose:
             print(f"\n{'─' * 60}")
             print("  Phase 3 — Director / Senior PM Final Decision")
             print("─" * 60)
         outcome = self._phase3_synthesize(initial_verdicts, critique, revised_verdicts)
+        trace("orchestrator", "phase_end", f"Phase 3 complete — decision: {outcome.final_decision.value}")
+        trace("orchestrator", "session", "War-room session complete")
         return outcome

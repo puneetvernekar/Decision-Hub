@@ -23,6 +23,7 @@ from war_room.tools import (
     detect_anomalies,
     summarize_sentiment,
 )
+from war_room.trace import trace, reset_trace, get_trace
 
 
 # ── Pretty-print helpers ────────────────────────────────────────────────────
@@ -162,6 +163,17 @@ def _print_outcome(outcome: WarRoomOutcome) -> None:
             print(f"  • {item}")
         print()
 
+    # Trace summary
+    trace_log = get_trace()
+    if trace_log:
+        print("─" * W)
+        print(f"  Execution Trace ({len(trace_log)} steps)")
+        print("─" * W)
+        for entry in trace_log:
+            print(f"  [{entry['step']:>3}] +{entry['elapsed_s']:6.2f}s  "
+                  f"{entry['source']:20s}  {entry['event']:12s}  {entry['detail']}")
+        print()
+
     print("=" * W)
 
 
@@ -171,33 +183,30 @@ def _run_offline(dashboard: dict) -> WarRoomOutcome:
     """Deterministic offline simulation for testing without an API key."""
     print("\n⚡ Running OFFLINE simulation (no LLM calls)\n")
 
-    # ── Invoke tools programmatically (same as real agents do) ──────────
-    metrics_report = aggregate_metrics(dashboard)
-    anomaly_report = detect_anomalies(dashboard)
-    sentiment_report = summarize_sentiment(dashboard)
-    trend_report = compare_trends(dashboard)
+    reset_trace()
+    trace("orchestrator", "session", "War-room session started (offline mode)")
 
-    print("─" * 64)
-    print("  Tool Invocations")
-    print("─" * 64)
-    print(f"  🔧 Product Manager  invoked: aggregate_metrics, compare_trends")
-    print(f"  🔧 Data Analyst     invoked: aggregate_metrics, detect_anomalies")
-    print(f"  🔧 Marketing & Comms invoked: summarize_sentiment")
-    print(f"  🔧 Risk / Critic    invoked: detect_anomalies, aggregate_metrics")
-    print(f"\n  Results snapshot:")
-    print(f"    aggregate_metrics  → health: {metrics_report['overall_health']}, "
-          f"{metrics_report['breaching_count']}/{metrics_report['total_metrics']} metrics breaching")
-    print(f"    detect_anomalies   → {anomaly_report['total_anomalies']} anomalies found "
-          f"({sum(1 for a in anomaly_report['anomalies'] if a['severity'] == 'high')} high severity)")
-    print(f"    summarize_sentiment → net score: {sentiment_report['net_sentiment_score']}, "
-          f"{sentiment_report['sentiment_breakdown']['negative']} negative / "
-          f"{sentiment_report['sentiment_breakdown']['positive']} positive")
-    top_themes = list(sentiment_report['top_themes'].items())[:3]
-    if top_themes:
-        themes_str = ", ".join(f"{t[0]} ({t[1]})" for t in top_themes)
-        print(f"                        top themes: {themes_str}")
-    print(f"    compare_trends     → {trend_report['improving_count']} improving, "
-          f"{trend_report['worsening_count']} worsening")
+    # ── Invoke tools programmatically (same as real agents do) ──────────
+    trace("orchestrator", "phase_start", "Phase 1 — Independent Agent Analysis")
+
+    trace("Product Manager", "tool_call", "Invoking 2 tool(s): aggregate_metrics, compare_trends")
+    metrics_report = aggregate_metrics(dashboard)
+    trend_report = compare_trends(dashboard)
+    trace("Product Manager", "tool_done", "2 tool result(s) received")
+    trace("Product Manager", "verdict", "Pause (confidence: 72%)")
+
+    trace("Data Analyst", "tool_call", "Invoking 2 tool(s): aggregate_metrics, detect_anomalies")
+    anomaly_report = detect_anomalies(dashboard)
+    trace("Data Analyst", "tool_done", "2 tool result(s) received")
+    trace("Data Analyst", "verdict", "Pause (confidence: 82%)")
+
+    trace("Marketing & Comms", "tool_call", "Invoking 1 tool(s): summarize_sentiment")
+    sentiment_report = summarize_sentiment(dashboard)
+    trace("Marketing & Comms", "tool_done", "1 tool result(s) received")
+    trace("Marketing & Comms", "verdict", "Pause (confidence: 70%)")
+
+    trace("orchestrator", "phase_end", "Phase 1 complete — 3 verdicts collected")
+
     print()
 
     # ── Extract data ────────────────────────────────────────────────────
@@ -336,6 +345,11 @@ def _run_offline(dashboard: dict) -> WarRoomOutcome:
     #  PHASE 2a — Risk/Critic challenge
     # ════════════════════════════════════════════════════════════════════
 
+    trace("orchestrator", "phase_start", "Phase 2a — Risk/Critic Challenge")
+    trace("Risk / Critic", "tool_call", "Invoking 2 tool(s): detect_anomalies, aggregate_metrics")
+    trace("Risk / Critic", "tool_done", "2 tool result(s) received")
+    trace("Risk / Critic", "verdict", "Roll Back (confidence: 68%)")
+
     critique = AgentVerdict(
         agent_name="Risk / Critic",
         role="risk_critic",
@@ -384,9 +398,13 @@ def _run_offline(dashboard: dict) -> WarRoomOutcome:
         ),
     )
 
+    trace("orchestrator", "phase_end", "Phase 2a complete — critique: Roll Back")
+
     # ════════════════════════════════════════════════════════════════════
     #  PHASE 2b — Revised verdicts (after seeing peers + critique)
     # ════════════════════════════════════════════════════════════════════
+
+    trace("orchestrator", "phase_start", "Phase 2b — Agent Revision (after deliberation)")
 
     pm_revised = AgentVerdict(
         agent_name="Product Manager",
@@ -487,9 +505,16 @@ def _run_offline(dashboard: dict) -> WarRoomOutcome:
 
     revised_verdicts = [pm_revised, data_revised, marketing_revised]
 
+    trace("Product Manager", "revised", "Pause (confidence: 65%)")
+    trace("Data Analyst", "revised", "Pause (confidence: 80%)")
+    trace("Marketing & Comms", "revised", "Pause (confidence: 62%)")
+    trace("orchestrator", "phase_end", "Phase 2b complete — 3 revised verdicts")
+
     # ════════════════════════════════════════════════════════════════════
     #  PHASE 3 — Director / Senior PM synthesis
     # ════════════════════════════════════════════════════════════════════
+
+    trace("orchestrator", "phase_start", "Phase 3 — Director / Senior PM Final Decision")
 
     outcome = WarRoomOutcome(
         final_decision=Decision.PAUSE,
@@ -614,6 +639,9 @@ def _run_offline(dashboard: dict) -> WarRoomOutcome:
         ],
     )
 
+    trace("orchestrator", "phase_end", "Phase 3 complete — decision: Pause")
+    trace("orchestrator", "session", "War-room session complete (offline mode)")
+
     return outcome
 
 
@@ -668,6 +696,7 @@ def main() -> None:
             "communication_plan": outcome.communication_plan,
             "follow_up_monitoring": outcome.follow_up_monitoring,
             "dissenting_opinions": outcome.dissenting_opinions,
+            "execution_trace": get_trace(),
         }
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)

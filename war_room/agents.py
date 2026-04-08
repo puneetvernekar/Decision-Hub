@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 
 from .models import AgentVerdict, Decision
 from .tools import TOOL_REGISTRY
+from .trace import trace
 
 # ── Shared JSON extraction helper ───────────────────────────────────────────
 
@@ -134,9 +135,12 @@ class BaseAgent:
 
     def analyze(self, dashboard: dict) -> AgentVerdict:
         """Phase 1: Invoke tools, then call the LLM with enriched context."""
+        trace(self.name, "tool_call", f"Invoking {len(self.tools)} tool(s): {', '.join(self.tools)}")
         tool_results = self._invoke_tools(dashboard)
+        trace(self.name, "tool_done", f"{len(tool_results)} tool result(s) received")
         tool_text = self._format_tool_outputs(tool_results)
 
+        trace(self.name, "llm_call", "Sending enriched prompt to LLM")
         response = self.client.chat.completions.create(
             model=self.model,
             temperature=0.3,
@@ -146,7 +150,9 @@ class BaseAgent:
             ],
         )
         raw = response.choices[0].message.content
-        return _parse_verdict(raw, self.name, self.role)
+        verdict = _parse_verdict(raw, self.name, self.role)
+        trace(self.name, "verdict", f"{verdict.decision.value} (confidence: {verdict.confidence:.0%})")
+        return verdict
 
     # ── Phase 2b: revision after deliberation ───────────────────────────
 
@@ -188,6 +194,7 @@ class BaseAgent:
             {_VERDICT_SCHEMA}
         """)
 
+        trace(self.name, "llm_call", "Revising verdict after deliberation")
         response = self.client.chat.completions.create(
             model=self.model,
             temperature=0.3,
@@ -197,7 +204,9 @@ class BaseAgent:
             ],
         )
         raw = response.choices[0].message.content
-        return _parse_verdict(raw, self.name, self.role)
+        verdict = _parse_verdict(raw, self.name, self.role)
+        trace(self.name, "revised", f"{verdict.decision.value} (confidence: {verdict.confidence:.0%})")
+        return verdict
 
 
 # ── Concrete Phase-1 agents ────────────────────────────────────────────────
@@ -296,7 +305,9 @@ class RiskCriticAgent(BaseAgent):
 
     def challenge(self, dashboard: dict, verdicts: list[AgentVerdict]) -> AgentVerdict:
         """Phase 2a: Invoke tools, then review all Phase 1 verdicts critically."""
+        trace(self.name, "tool_call", f"Invoking {len(self.tools)} tool(s): {', '.join(self.tools)}")
         tool_results = self._invoke_tools(dashboard)
+        trace(self.name, "tool_done", f"{len(tool_results)} tool result(s) received")
         tool_text = self._format_tool_outputs(tool_results)
 
         verdicts_summary = format_verdicts_summary(verdicts)
@@ -335,6 +346,7 @@ class RiskCriticAgent(BaseAgent):
             {_VERDICT_SCHEMA}
         """)
 
+        trace(self.name, "llm_call", "Reviewing Phase 1 verdicts critically")
         response = self.client.chat.completions.create(
             model=self.model,
             temperature=0.4,
@@ -344,7 +356,9 @@ class RiskCriticAgent(BaseAgent):
             ],
         )
         raw = response.choices[0].message.content
-        return _parse_verdict(raw, self.name, self.role)
+        verdict = _parse_verdict(raw, self.name, self.role)
+        trace(self.name, "verdict", f"{verdict.decision.value} (confidence: {verdict.confidence:.0%})")
+        return verdict
 
 
 # ── Registry ────────────────────────────────────────────────────────────────

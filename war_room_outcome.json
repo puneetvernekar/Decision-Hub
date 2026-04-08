@@ -194,5 +194,182 @@
   "dissenting_opinions": [
     "Risk/Critic (Roll Back, 68% confidence): KI-001 (draft data loss) is still in 'investigating' status after 10 days and has been reported by 3 users with Reddit amplification. At 25% rollout, ~130,000 users are exposed to a data-loss bug with no confirmed fix. The recovery trend is only 3 days old and untested at higher scale. Pausing still leaves users in a degraded state \u2014 a full rollback protects user trust while the team ships fixes and re-launches cleanly.",
     "Marketing & Comms (conditional): If KI-001 is not fixed within 48h, would shift recommendation to Roll Back. The brand cost of prolonged data-loss exposure outweighs the brand cost of pulling the feature."
+  ],
+  "execution_trace": [
+    {
+      "step": 1,
+      "elapsed_s": 0.0,
+      "source": "orchestrator",
+      "event": "session",
+      "detail": "War-room session started (offline mode)"
+    },
+    {
+      "step": 2,
+      "elapsed_s": 0.0,
+      "source": "orchestrator",
+      "event": "phase_start",
+      "detail": "Phase 1 \u2014 Independent Agent Analysis"
+    },
+    {
+      "step": 3,
+      "elapsed_s": 0.0,
+      "source": "Product Manager",
+      "event": "tool_call",
+      "detail": "Invoking 2 tool(s): aggregate_metrics, compare_trends"
+    },
+    {
+      "step": 4,
+      "elapsed_s": 0.0,
+      "source": "Product Manager",
+      "event": "tool_done",
+      "detail": "2 tool result(s) received"
+    },
+    {
+      "step": 5,
+      "elapsed_s": 0.0,
+      "source": "Product Manager",
+      "event": "verdict",
+      "detail": "Pause (confidence: 72%)"
+    },
+    {
+      "step": 6,
+      "elapsed_s": 0.0,
+      "source": "Data Analyst",
+      "event": "tool_call",
+      "detail": "Invoking 2 tool(s): aggregate_metrics, detect_anomalies"
+    },
+    {
+      "step": 7,
+      "elapsed_s": 0.0,
+      "source": "Data Analyst",
+      "event": "tool_done",
+      "detail": "2 tool result(s) received"
+    },
+    {
+      "step": 8,
+      "elapsed_s": 0.0,
+      "source": "Data Analyst",
+      "event": "verdict",
+      "detail": "Pause (confidence: 82%)"
+    },
+    {
+      "step": 9,
+      "elapsed_s": 0.0,
+      "source": "Marketing & Comms",
+      "event": "tool_call",
+      "detail": "Invoking 1 tool(s): summarize_sentiment"
+    },
+    {
+      "step": 10,
+      "elapsed_s": 0.0,
+      "source": "Marketing & Comms",
+      "event": "tool_done",
+      "detail": "1 tool result(s) received"
+    },
+    {
+      "step": 11,
+      "elapsed_s": 0.0,
+      "source": "Marketing & Comms",
+      "event": "verdict",
+      "detail": "Pause (confidence: 70%)"
+    },
+    {
+      "step": 12,
+      "elapsed_s": 0.0,
+      "source": "orchestrator",
+      "event": "phase_end",
+      "detail": "Phase 1 complete \u2014 3 verdicts collected"
+    },
+    {
+      "step": 13,
+      "elapsed_s": 0.0,
+      "source": "orchestrator",
+      "event": "phase_start",
+      "detail": "Phase 2a \u2014 Risk/Critic Challenge"
+    },
+    {
+      "step": 14,
+      "elapsed_s": 0.0,
+      "source": "Risk / Critic",
+      "event": "tool_call",
+      "detail": "Invoking 2 tool(s): detect_anomalies, aggregate_metrics"
+    },
+    {
+      "step": 15,
+      "elapsed_s": 0.0,
+      "source": "Risk / Critic",
+      "event": "tool_done",
+      "detail": "2 tool result(s) received"
+    },
+    {
+      "step": 16,
+      "elapsed_s": 0.0,
+      "source": "Risk / Critic",
+      "event": "verdict",
+      "detail": "Roll Back (confidence: 68%)"
+    },
+    {
+      "step": 17,
+      "elapsed_s": 0.0,
+      "source": "orchestrator",
+      "event": "phase_end",
+      "detail": "Phase 2a complete \u2014 critique: Roll Back"
+    },
+    {
+      "step": 18,
+      "elapsed_s": 0.0,
+      "source": "orchestrator",
+      "event": "phase_start",
+      "detail": "Phase 2b \u2014 Agent Revision (after deliberation)"
+    },
+    {
+      "step": 19,
+      "elapsed_s": 0.0,
+      "source": "Product Manager",
+      "event": "revised",
+      "detail": "Pause (confidence: 65%)"
+    },
+    {
+      "step": 20,
+      "elapsed_s": 0.0,
+      "source": "Data Analyst",
+      "event": "revised",
+      "detail": "Pause (confidence: 80%)"
+    },
+    {
+      "step": 21,
+      "elapsed_s": 0.0,
+      "source": "Marketing & Comms",
+      "event": "revised",
+      "detail": "Pause (confidence: 62%)"
+    },
+    {
+      "step": 22,
+      "elapsed_s": 0.0,
+      "source": "orchestrator",
+      "event": "phase_end",
+      "detail": "Phase 2b complete \u2014 3 revised verdicts"
+    },
+    {
+      "step": 23,
+      "elapsed_s": 0.0,
+      "source": "orchestrator",
+      "event": "phase_start",
+      "detail": "Phase 3 \u2014 Director / Senior PM Final Decision"
+    },
+    {
+      "step": 24,
+      "elapsed_s": 0.0,
+      "source": "orchestrator",
+      "event": "phase_end",
+      "detail": "Phase 3 complete \u2014 decision: Pause"
+    },
+    {
+      "step": 25,
+      "elapsed_s": 0.0,
+      "source": "orchestrator",
+      "event": "session",
+      "detail": "War-room session complete (offline mode)"
+    }
   ]
 }
