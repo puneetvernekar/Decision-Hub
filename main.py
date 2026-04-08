@@ -648,9 +648,22 @@ def _run_offline(dashboard: dict) -> WarRoomOutcome:
 # ── Main ────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    # Load .env file (if present) before reading any env vars
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass  # python-dotenv not installed — fall back to raw env vars
+
+    # Defaults come from .env → env vars → CLI overrides
+    env_model = os.environ.get("LLM_MODEL", "gpt-4o")
+    env_parallel = int(os.environ.get("MAX_PARALLEL_AGENTS", "3"))
+    env_output = os.environ.get("OUTPUT_JSON_PATH", "war_room_outcome.json")
+
     parser = argparse.ArgumentParser(description="War Room — Launch Decision System")
     parser.add_argument(
-        "--model", default="gpt-4o", help="LLM model name (default: gpt-4o)"
+        "--model", default=env_model,
+        help=f"LLM model name (default from .env: {env_model})",
     )
     parser.add_argument(
         "--offline",
@@ -660,7 +673,7 @@ def main() -> None:
     parser.add_argument(
         "--json",
         action="store_true",
-        help="Also dump the full outcome as JSON to war_room_outcome.json",
+        help="Also dump the full outcome as JSON to the output path",
     )
     args = parser.parse_args()
 
@@ -670,21 +683,22 @@ def main() -> None:
         outcome = _run_offline(dashboard)
     else:
         api_key = os.environ.get("OPENAI_API_KEY")
+        base_url = os.environ.get("OPENAI_BASE_URL") or None
         if not api_key:
-            print("ERROR: OPENAI_API_KEY environment variable not set.")
-            print("       Set it or use --offline for a demo run.")
+            print("ERROR: OPENAI_API_KEY not set.")
+            print("       Add it to .env or export it, or use --offline for a demo run.")
             sys.exit(1)
         from openai import OpenAI
         from war_room.orchestrator import WarRoom
 
-        client = OpenAI(api_key=api_key)
-        war_room = WarRoom(client=client, model=args.model)
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        war_room = WarRoom(client=client, model=args.model, max_parallel=env_parallel)
         outcome = war_room.run(dashboard)
 
     _print_outcome(outcome)
 
     if args.json:
-        out_path = "war_room_outcome.json"
+        out_path = env_output
         payload = {
             "final_decision": outcome.final_decision.value,
             "decision_rationale": outcome.decision_rationale,
@@ -696,7 +710,6 @@ def main() -> None:
             "communication_plan": outcome.communication_plan,
             "follow_up_monitoring": outcome.follow_up_monitoring,
             "dissenting_opinions": outcome.dissenting_opinions,
-            "execution_trace": get_trace(),
         }
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)

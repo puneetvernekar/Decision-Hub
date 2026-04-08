@@ -10,7 +10,9 @@ agents revise after seeing peers' verdicts and the critique.
 from __future__ import annotations
 
 import json
+import re
 import textwrap
+import time
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -19,6 +21,36 @@ if TYPE_CHECKING:
 from .models import AgentVerdict, Decision
 from .tools import TOOL_REGISTRY
 from .trace import trace
+
+# ── Retry helper for rate-limited APIs ──────────────────────────────────────
+
+_MAX_RETRIES = 5
+
+
+def _llm_call_with_retry(client: Any, **kwargs) -> Any:
+    """Call ``client.chat.completions.create`` with automatic retry on 429.
+
+    Parses the retry delay from the error message when available and falls
+    back to exponential backoff otherwise.
+    """
+    for attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            return client.chat.completions.create(**kwargs)
+        except Exception as exc:
+            err_str = str(exc)
+            if "429" not in err_str and "rate_limit" not in err_str.lower():
+                raise  # not a rate-limit error — propagate immediately
+
+            # Try to parse the suggested wait from the error message
+            match = re.search(r"try again in ([\d.]+)s", err_str, re.IGNORECASE)
+            wait = float(match.group(1)) + 1.0 if match else min(2 ** attempt, 30)
+
+            if attempt == _MAX_RETRIES:
+                raise  # exhausted retries
+
+            trace("rate_limit", "retry",
+                  f"429 hit — waiting {wait:.1f}s before retry {attempt}/{_MAX_RETRIES}")
+            time.sleep(wait)
 
 # ── Shared JSON extraction helper ───────────────────────────────────────────
 
@@ -141,7 +173,8 @@ class BaseAgent:
         tool_text = self._format_tool_outputs(tool_results)
 
         trace(self.name, "llm_call", "Sending enriched prompt to LLM")
-        response = self.client.chat.completions.create(
+        response = _llm_call_with_retry(
+            self.client,
             model=self.model,
             temperature=0.3,
             messages=[
@@ -195,7 +228,8 @@ class BaseAgent:
         """)
 
         trace(self.name, "llm_call", "Revising verdict after deliberation")
-        response = self.client.chat.completions.create(
+        response = _llm_call_with_retry(
+            self.client,
             model=self.model,
             temperature=0.3,
             messages=[
@@ -347,7 +381,8 @@ class RiskCriticAgent(BaseAgent):
         """)
 
         trace(self.name, "llm_call", "Reviewing Phase 1 verdicts critically")
-        response = self.client.chat.completions.create(
+        response = _llm_call_with_retry(
+            self.client,
             model=self.model,
             temperature=0.4,
             messages=[

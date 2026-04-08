@@ -16,7 +16,10 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from openai import OpenAI
 
-from .agents import PHASE1_AGENTS, RiskCriticAgent, BaseAgent, format_verdicts_summary
+from .agents import (
+    PHASE1_AGENTS, RiskCriticAgent, BaseAgent,
+    format_verdicts_summary, _llm_call_with_retry,
+)
 from .models import AgentVerdict, Decision, WarRoomOutcome
 from .trace import trace, reset_trace, get_trace
 
@@ -39,7 +42,10 @@ class WarRoom:
     def _phase1_analyze(
         self, dashboard: dict,
     ) -> tuple[list[AgentVerdict], list[BaseAgent]]:
-        """Run PM, Data Analyst, Marketing/Comms in parallel.
+        """Run PM, Data Analyst, Marketing/Comms.
+
+        Uses parallel execution when max_parallel > 1, otherwise runs
+        sequentially (safer for rate-limited free-tier APIs).
 
         Returns the verdicts **and** agent instances (so the caller
         can inspect ``agent.last_tool_results``).
@@ -48,16 +54,26 @@ class WarRoom:
         verdicts: list[AgentVerdict] = []
         agent_map: list[BaseAgent] = []
 
-        with ThreadPoolExecutor(max_workers=self.max_parallel) as pool:
-            futures = {pool.submit(agent.analyze, dashboard): agent for agent in agents}
-            for future in as_completed(futures):
-                agent = futures[future]
+        if self.max_parallel <= 1:
+            # Sequential — avoids rate-limit collisions on free tiers
+            for agent in agents:
                 try:
-                    verdict = future.result()
+                    verdict = agent.analyze(dashboard)
                     verdicts.append(verdict)
                     agent_map.append(agent)
                 except Exception as exc:
                     print(f"  ⚠  {agent.name} failed: {exc}")
+        else:
+            with ThreadPoolExecutor(max_workers=self.max_parallel) as pool:
+                futures = {pool.submit(agent.analyze, dashboard): agent for agent in agents}
+                for future in as_completed(futures):
+                    agent = futures[future]
+                    try:
+                        verdict = future.result()
+                        verdicts.append(verdict)
+                        agent_map.append(agent)
+                    except Exception as exc:
+                        print(f"  ⚠  {agent.name} failed: {exc}")
 
         return verdicts, agent_map
 
@@ -81,26 +97,39 @@ class WarRoom:
         initial_verdicts: list[AgentVerdict],
         critique: AgentVerdict,
     ) -> list[AgentVerdict]:
-        """Each Phase 1 agent revises after seeing peers + critique (parallel)."""
+        """Each Phase 1 agent revises after seeing peers + critique.
+
+        Sequential when max_parallel <= 1, parallel otherwise.
+        """
         agents = [cls(self.client, self.model) for cls in PHASE1_AGENTS]
         revised: list[AgentVerdict] = []
 
-        with ThreadPoolExecutor(max_workers=self.max_parallel) as pool:
-            futures = {}
+        if self.max_parallel <= 1:
             for agent in agents:
                 own_verdict = next(v for v in initial_verdicts if v.role == agent.role)
                 peer_verdicts = [v for v in initial_verdicts if v.role != agent.role]
-                futures[pool.submit(
-                    agent.revise, dashboard, own_verdict, peer_verdicts, critique
-                )] = agent
-
-            for future in as_completed(futures):
-                agent = futures[future]
                 try:
-                    verdict = future.result()
+                    verdict = agent.revise(dashboard, own_verdict, peer_verdicts, critique)
                     revised.append(verdict)
                 except Exception as exc:
                     print(f"  ⚠  {agent.name} revision failed: {exc}")
+        else:
+            with ThreadPoolExecutor(max_workers=self.max_parallel) as pool:
+                futures = {}
+                for agent in agents:
+                    own_verdict = next(v for v in initial_verdicts if v.role == agent.role)
+                    peer_verdicts = [v for v in initial_verdicts if v.role != agent.role]
+                    futures[pool.submit(
+                        agent.revise, dashboard, own_verdict, peer_verdicts, critique
+                    )] = agent
+
+                for future in as_completed(futures):
+                    agent = futures[future]
+                    try:
+                        verdict = future.result()
+                        revised.append(verdict)
+                    except Exception as exc:
+                        print(f"  ⚠  {agent.name} revision failed: {exc}")
 
         return revised
 
@@ -194,7 +223,8 @@ class WarRoom:
             {schema}
         """)
 
-        response = self.client.chat.completions.create(
+        response = _llm_call_with_retry(
+            self.client,
             model=self.model,
             temperature=0.2,
             messages=[
