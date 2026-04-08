@@ -18,7 +18,6 @@ import textwrap
 from war_room.mock_dashboard import get_dashboard_snapshot
 from war_room.models import AgentVerdict, Decision, WarRoomOutcome
 from war_room.tools import (
-    TOOL_REGISTRY,
     aggregate_metrics,
     compare_trends,
     detect_anomalies,
@@ -658,22 +657,12 @@ def main() -> None:
 
     if args.json:
         out_path = "war_room_outcome.json"
-        # Always include tool analysis in JSON output
-        tool_analysis = {
-            "aggregate_metrics": aggregate_metrics(dashboard),
-            "detect_anomalies": detect_anomalies(dashboard),
-            "summarize_sentiment": summarize_sentiment(dashboard),
-            "compare_trends": compare_trends(dashboard),
-        }
         payload = {
             "final_decision": outcome.final_decision.value,
             "decision_rationale": outcome.decision_rationale,
             "confidence_score": outcome.confidence_score,
             "confidence_drivers": outcome.confidence_drivers,
-            "tool_analysis": tool_analysis,
-            "initial_verdicts": [_verdict_to_dict(v) for v in outcome.initial_verdicts],
-            "critique": _verdict_to_dict(outcome.critique),
-            "revised_verdicts": [_verdict_to_dict(v) for v in outcome.revised_verdicts],
+            "final_verdicts": [_verdict_to_dict(v) for v in outcome.revised_verdicts],
             "action_plan": outcome.action_plan,
             "risks_and_mitigations": outcome.risks_and_mitigations,
             "communication_plan": outcome.communication_plan,
