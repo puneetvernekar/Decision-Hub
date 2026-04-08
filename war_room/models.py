@@ -31,7 +31,9 @@ class WarRoomOutcome:
     """Final synthesised outcome of the war-room session."""
     final_decision: Decision
     decision_rationale: str
-    individual_verdicts: list[AgentVerdict]
+    initial_verdicts: list[AgentVerdict]       # Phase 1: PM, Data, Marketing
+    critique: AgentVerdict                     # Phase 2a: Risk/Critic challenge
+    revised_verdicts: list[AgentVerdict]       # Phase 2b: revised after deliberation
     action_plan: list[str]
     risks_and_mitigations: list[str]
     follow_up_monitoring: list[str]

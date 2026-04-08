@@ -1,7 +1,7 @@
 {
   "final_decision": "Pause",
-  "decision_rationale": "Four of five agents recommend Pause; one (Risk/Critic) recommends Roll Back. The 10-day data shows a clear pattern: a significant degradation on Days 5-6, followed by partial recovery after the Day 7 hotfix. By Day 10, crash rate (0.95%) and latency (290ms) are trending toward thresholds but have not yet consistently met them. Three of nine metrics still breach success criteria. The critical draft-loss bug (KI-001) remains open and poses unacceptable data-integrity risk. Feature funnel completion (28.5%) and funnel completion (28.5%) are strong positive signals that argue against a full rollback. Pausing at 25% limits the blast radius to ~130,000 users while preserving the ability to resume quickly. The pause is conditional on shipping the KI-001 fix and opt-out toggle before any further expansion.",
-  "individual_verdicts": [
+  "decision_rationale": "All three domain agents maintain Pause after deliberation, though with lower confidence (PM: 72%\u219265%, Data: 82%\u219280%, Marketing: 70%\u219262%). The Risk/Critic recommends Roll Back (68% confidence) citing KI-001 data-loss exposure. The strongest argument against Pause is the Risk/Critic's point that ~130,000 users remain exposed to a data-loss bug with no confirmed fix \u2014 this is a valid concern. However, the agents' revised positions converge on a conditional Pause with a hard 48h gate on KI-001: if the fix is not shipped in 48h, the decision escalates to Roll Back. This conditional approach preserves the 28.5% adoption signal and avoids the brand cost of a full rollback, while setting a firm deadline that addresses the Risk/Critic's core concern. The deliberation shifted all agents to treat KI-001 as the #1 priority \u2014 above the opt-out toggle and expansion planning.",
+  "initial_verdicts": [
     {
       "agent": "Product Manager",
       "role": "pm",
@@ -49,7 +49,7 @@
       "role": "marketing_comms",
       "decision": "Pause",
       "confidence": 0.7,
-      "rationale": "Of 35 feedback entries: 10 positive, 18 negative, 7 neutral. Negative feedback is concentrated on Days 4-6 (the trouble window) and clusters around 3 recurring themes: (1) performance/lag \u2014 6 mentions, (2) no opt-out \u2014 5 mentions, (3) draft data loss \u2014 3 mentions. Two high-impact outliers: a user with a disability praising the feature (#35) and a sales email auto-complete incident that could have cost a deal (#34). App store ratings are polarised (1-star and 5-star). Reddit thread about draft data loss (PSA post) has amplification risk. Sentiment is skewed negative in the Days 4-6 window. Post-hotfix sentiment (Days 8-10) is more positive, but the missing opt-out toggle is a persistent irritant across all channels.",
+      "rationale": "Of 35 feedback entries: 10 positive, 18 negative, 7 neutral. Negative feedback is concentrated on Days 4-6 (the trouble window) and clusters around 3 recurring themes: (1) performance/lag \u2014 6 mentions, (2) no opt-out \u2014 5 mentions, (3) draft data loss \u2014 3 mentions. Two high-impact outliers: a user with a disability praising the feature (#35) and a sales email auto-complete incident that could have cost a deal (#34). App store ratings are polarised (1-star and 5-star). Reddit thread about draft data loss (PSA post) has amplification risk. Post-hotfix sentiment (Days 8-10) is more positive, but the missing opt-out toggle is a persistent irritant across all channels.",
       "key_evidence": [
         "Feedback: 10 positive / 18 negative / 7 neutral across 6 channels",
         "Top repeated issue: performance/lag (6 mentions across in-app, support, Twitter)",
@@ -67,71 +67,113 @@
         "Monitor Reddit thread on draft loss \u2014 if it trends, issue an official response."
       ],
       "dissent_notes": null
-    },
+    }
+  ],
+  "critique": {
+    "agent": "Risk / Critic",
+    "role": "risk_critic",
+    "decision": "Roll Back",
+    "confidence": 0.68,
+    "rationale": "All three agents recommend Pause, but I challenge their shared assumption that the recovery trend is sufficient to hold at 25%. KI-001 (draft data loss) remains in 'investigating' status after 10 days \u2014 this is a critical severity bug reported by 3 users and amplified on Reddit. At 25% rollout (130,000 users exposed), the blast radius for a data-loss bug is unacceptable. The PM's focus on funnel completion (28.5%) is an anchoring bias \u2014 strong adoption means MORE users are exposed to the data-loss risk. The Data Analyst notes 3 of 9 metrics still breach thresholds but still recommends Pause; this conflates 'improving' with 'acceptable'. The Marketing agent correctly identifies the amplification risk but underweights it \u2014 a single viral thread about data loss can do more brand damage than all the performance complaints combined. Cancellations averaged 34/day over 10 days vs 10/day baseline \u2014 a 3.4x increase. The recovery trend is only 3 days old and untested at higher rollout. I recommend Roll Back to protect user trust while fixes are shipped.",
+    "key_evidence": [
+      "KI-001 (critical): draft data loss \u2014 still 'investigating' after 10 days",
+      "Churn: 335 cancellations in 10 days (34/day vs 10/day baseline)",
+      "D7 retention: 39.2% < 42.0% target",
+      "Crash rate Day 10: 0.95% \u2014 still above 0.75% threshold",
+      "Payment success dip to 97.8% signals infrastructure fragility",
+      "3 of 9 metrics still breaching thresholds on Day 10",
+      "PM's 28.5% funnel adoption = more users exposed to data-loss bug (anchoring risk)"
+    ],
+    "recommended_actions": [
+      "Roll back to pre-launch state for the 25% cohort \u2014 data-loss risk is too high.",
+      "If rollback is rejected: freeze at 25%, mandate KI-001 fix within 48h, add opt-out toggle.",
+      "Commission independent review of the inference API scaling before any expansion.",
+      "Conduct blameless post-incident review covering the Day 5-6 degradation."
+    ],
+    "dissent_notes": "The majority leans toward Pause, but pausing at 25% still exposes ~130k users to a data-loss bug (KI-001) with no confirmed fix. The recovery trend is only 3 days old (Day 7 hotfix) and has not been stress-tested at higher rollout. The draft-disappearing bug alone warrants rollback \u2014 it is a trust-destroying event and 3 users have already reported it. If even 0.1% of the 130k cohort experiences data loss, that's 130 affected users with high churn and social amplification risk."
+  },
+  "revised_verdicts": [
     {
-      "agent": "Risk / Critic",
-      "role": "risk_critic",
-      "decision": "Roll Back",
-      "confidence": 0.68,
-      "rationale": "KI-001 (draft data loss) remains in 'investigating' status after 10 days \u2014 this is a critical severity bug that has been reported by 3 separate users and amplified on Reddit. At 25% rollout (130,000 users exposed), the blast radius for a data-loss bug is unacceptable. Cancellations averaged 34/day over 10 days vs 10/day baseline \u2014 a 3.4x increase that would scale further at full rollout. D7 retention at 39.2% is below the 42.0% threshold \u2014 the feature may be driving users away. The Day 7 hotfix improved latency but crash rate (0.95%) still exceeds the 0.75% threshold. Extrapolating to 50% rollout carries infrastructure risk given KI-002's partial fix status. The team may be anchored on the recovery trend rather than the absolute breach of success criteria.",
-      "key_evidence": [
-        "KI-001 (critical): draft data loss \u2014 still 'investigating' after 10 days",
-        "Churn: 335 cancellations in 10 days (34/day vs 10/day baseline)",
-        "D7 retention: 39.2% < 42.0% target",
-        "Crash rate Day 10: 0.95% \u2014 still above 0.75% threshold",
-        "Payment success dip to 97.8% signals infrastructure fragility",
-        "3 of 9 metrics still breaching thresholds on Day 10"
-      ],
-      "recommended_actions": [
-        "Roll back to pre-launch state for the 25% cohort \u2014 data-loss risk is too high.",
-        "If rollback is rejected: freeze at 25%, mandate KI-001 fix within 48h, add opt-out toggle.",
-        "Commission independent review of the inference API scaling before any expansion.",
-        "Conduct blameless post-incident review covering the Day 5-6 degradation."
-      ],
-      "dissent_notes": "The majority leans toward Pause, but pausing at 25% still exposes ~130k users to a data-loss bug (KI-001) with no confirmed fix. The recovery trend is only 3 days old (Day 7 hotfix) and has not been stress-tested at higher rollout. The draft-disappearing bug alone warrants rollback \u2014 it is a trust-destroying event and 3 users have already reported it. If even 0.1% of the 130k cohort experiences data loss, that's 130 affected users with high churn and social amplification risk."
-    },
-    {
-      "agent": "Engineering Lead",
-      "role": "engineering_lead",
+      "agent": "Product Manager",
+      "role": "pm",
       "decision": "Pause",
-      "confidence": 0.76,
-      "rationale": "The Day 7 hotfix materially improved performance: latency dropped from 485ms \u2192 290ms (1.5x baseline, within the 300ms target). Crash rate improved from 2.4% \u2192 0.95% but still exceeds the 0.75% threshold. KI-001 (draft loss race condition) is the highest-priority item \u2014 root cause is identified (auto-save debounce vs suggestion overlay teardown) and a fix is feasible in 24-48h. KI-002 (latency scaling) hotfix is deployed; further tuning requires load testing at 50% traffic before expansion. KI-004 (opt-out toggle) is ~4 engineering days from ship. Full rollback is costly (~6 engineer-hours + deployment risk + user confusion) and would lose the 28.5% adoption signal. A pause + targeted fixes is the better path.",
+      "confidence": 0.65,
+      "rationale": "After reviewing the Risk/Critic's challenge, I acknowledge the KI-001 data-loss concern is more urgent than my initial framing suggested. The 28.5% funnel adoption IS a double-edged sword \u2014 high engagement means more users exposed to the bug. However, I maintain Pause over Roll Back: the Day 7 hotfix shows the engineering team can ship targeted fixes, and rolling back would lose the adoption signal and create user confusion. My confidence is lower (65% vs 72%) because the D7 retention decline (39.2% vs 42.0% target) combined with the unresolved KI-001 makes the risk profile worse than I initially weighted. I now prioritise KI-001 fix as the #1 gate \u2014 above the opt-out toggle.",
       "key_evidence": [
-        "Latency: 485ms (Day 6) \u2192 290ms (Day 10) \u2014 hotfix working",
-        "Crash rate: 2.4% \u2192 0.95% \u2014 improving but still above 0.75%",
-        "KI-001 root cause identified: race condition in auto-save debounce \u2014 fix ETA 24-48h",
-        "KI-002 hotfix deployed Day 7; needs load test at 50% before expansion",
-        "KI-004 opt-out toggle: ~4 engineering days (aligns with v4.12.1 plan)",
-        "Rollback cost: ~6 engineer-hours + deployment risk + loss of 28.5% funnel adoption cohort",
-        "Payment success recovered: 99.2% (correlated with latency fix)"
+        "Adjusted: KI-001 data-loss risk elevated \u2014 130k users exposed with no confirmed fix",
+        "D7 retention: 39.2% still declining \u2014 cannot confirm feature-driven vs performance-driven",
+        "Funnel adoption 28.5% is strong but increases blast radius for data-loss bug",
+        "Data Analyst's evidence on 3/9 metric breaches reinforces caution"
       ],
       "recommended_actions": [
-        "P0: Fix KI-001 (draft loss race condition) within 48h \u2014 add mutex on auto-save during overlay transitions.",
-        "P1: Run load test simulating 50% traffic against inference API before any expansion.",
-        "P1: Ship opt-out toggle (KI-004) \u2014 fast-track from v4.12.1 plan.",
-        "Freeze rollout at 25% with automated gate: crash_rate < 0.75% AND latency < 300ms for 72h.",
-        "Add server-side draft backup as defence-in-depth against future data-loss regressions."
+        "Freeze rollout at 25% \u2014 KI-001 fix is now the #1 gate (above opt-out toggle).",
+        "Mandate KI-001 fix within 48h as a hard prerequisite for maintaining current rollout.",
+        "If KI-001 is not fixed in 48h, escalate to Roll Back discussion.",
+        "Run a D7 retention deep-dive to separate performance-driven churn from feature-driven churn."
       ],
       "dissent_notes": null
+    },
+    {
+      "agent": "Data Analyst",
+      "role": "data_analyst",
+      "decision": "Pause",
+      "confidence": 0.8,
+      "rationale": "The Risk/Critic's challenge on KI-001 is valid \u2014 data-loss is a non-metric risk that my quantitative analysis cannot fully capture. However, the metric trends support Pause, not Roll Back: crash rate is on a clear downward trajectory (2.4% \u2192 0.95%), latency is within target (290ms < 300ms), and payment success has recovered to 99.2%. The critique that 'improving \u2260 acceptable' is fair \u2014 I've slightly lowered my confidence to 80%. The 3 breaching metrics (crash rate, D7 retention, support tickets) need more time to confirm sustained recovery. I agree with the PM that KI-001 should be the #1 gate.",
+      "key_evidence": [
+        "Crash rate trajectory: 2.4% (Day 6) \u2192 0.95% (Day 10) \u2014 improving but 0.95% > 0.75%",
+        "Latency: 290ms \u2014 now within 300ms target",
+        "Payment success: 99.2% \u2014 recovered above 99.0% threshold",
+        "D7 retention: 39.2% \u2014 still declining, need Day 3-4 cohort data (Days 10-11)",
+        "Risk/Critic's point accepted: KI-001 is a qualitative risk not captured in my metrics"
+      ],
+      "recommended_actions": [
+        "Hold at 25% rollout until crash rate < 0.75% for 3 consecutive days.",
+        "Elevate KI-001 fix to P0 gate \u2014 no expansion until fix is confirmed.",
+        "Set automated monitoring: all 9 metrics must be within thresholds for 48h before expansion.",
+        "Track D7 retention for Day 3-4 cohort maturing on Days 10-11."
+      ],
+      "dissent_notes": null
+    },
+    {
+      "agent": "Marketing & Comms",
+      "role": "marketing_comms",
+      "decision": "Pause",
+      "confidence": 0.62,
+      "rationale": "The Risk/Critic's emphasis on the Reddit data-loss PSA and its amplification potential has shifted my assessment. I underweighted the brand damage of a viral data-loss thread \u2014 it IS more damaging than performance complaints. However, I still favour Pause over Roll Back because: (1) rolling back generates its own negative narrative ('they had to pull the feature'), (2) the accessibility user (#35) represents a powerful positive story we'd lose, and (3) transparent acknowledgement of the issue can convert critics into advocates if we fix fast. My confidence has dropped from 70% to 62% \u2014 if KI-001 is not fixed within 48h, I would shift to Roll Back to protect the brand.",
+      "key_evidence": [
+        "Revised: Reddit data-loss PSA is higher risk than initially assessed \u2014 viral potential",
+        "Rollback has its own brand cost: 'they had to pull the feature' narrative",
+        "Accessibility user (#35) represents key positive narrative worth preserving",
+        "Post-hotfix sentiment (Days 8-10) is trending positive \u2014 fragile but real"
+      ],
+      "recommended_actions": [
+        "Issue transparent status update WITHIN 24h: acknowledge data-loss bug, performance issues, and opt-out gap.",
+        "Respond personally to Twitter auto-complete complaints with empathy and DM follow-up.",
+        "If KI-001 is not fixed in 48h, recommend shift to Roll Back to protect brand.",
+        "Prepare dual comms plans: (a) 'we paused and fixed it' and (b) 'we rolled back to protect you'.",
+        "Monitor Reddit thread on draft loss \u2014 if it trends, issue official response immediately."
+      ],
+      "dissent_notes": "If KI-001 is not fixed within 48h, I would shift my recommendation to Roll Back. The brand cost of a prolonged data-loss exposure outweighs the brand cost of pulling the feature and re-launching cleanly."
     }
   ],
   "action_plan": [
     "IMMEDIATE: Freeze rollout at 25% \u2014 block scheduled expansion to 50%.",
-    "IMMEDIATE (P0): Assign 2 engineers to KI-001 (draft loss race condition); target fix within 48h.",
+    "IMMEDIATE (P0): Assign 2 engineers to KI-001 (draft loss race condition); hard 48h deadline.",
     "WITHIN 24h: Add server-side draft backup as defence-in-depth for data loss.",
+    "WITHIN 24h: Publish transparent status update across all channels (blog, in-app banner, social).",
     "WITHIN 48h: Ship KI-001 fix and verify with targeted regression tests.",
+    "ESCALATION GATE: If KI-001 is NOT fixed by 48h, reconvene war room to decide Roll Back.",
     "WITHIN 48h: Run inference API load test simulating 50% user traffic.",
     "WITHIN 4 DAYS: Ship user-facing opt-out toggle (KI-004, fast-tracked from v4.12.1).",
-    "WITHIN 24h: Publish transparent status update across all channels (blog, in-app banner, social).",
     "WITHIN 1 WEEK: Conduct blameless post-incident review of the Day 5-6 degradation.",
-    "GATE: Resume expansion to 50% ONLY when ALL of these are true for 72h: crash_rate < 0.75%, p95_latency < 300ms, KI-001 fix confirmed, opt-out toggle live."
+    "RESUME GATE: Expand to 50% ONLY when ALL of these hold for 72h: crash_rate < 0.75%, p95_latency < 300ms, KI-001 fix confirmed, opt-out toggle live."
   ],
   "risks_and_mitigations": [
-    "Risk: KI-001 data loss affects more users during pause \u2192 Mitigation: Server-side draft backup within 24h + P0 fix in 48h.",
+    "Risk: KI-001 data loss affects more users during pause \u2192 Mitigation: Server-side draft backup within 24h + P0 fix in 48h + escalation to Roll Back if missed.",
     "Risk: Crash rate re-spikes when expanding past 25% \u2192 Mitigation: Load test at 50% before expansion; automated rollback trigger at 1.5%.",
-    "Risk: Negative sentiment compounds (Reddit PSA, app-store 1-stars) \u2192 Mitigation: Transparent comms + personal outreach to vocal critics.",
+    "Risk: Negative sentiment compounds (Reddit PSA, app-store 1-stars) \u2192 Mitigation: Transparent comms within 24h + personal outreach to vocal critics.",
     "Risk: D7 retention continues declining \u2192 Mitigation: Deep-dive analysis separating performance-churn from feature-churn; opt-out toggle unblocks users who don't want the feature.",
-    "Risk: Pause drags beyond 1 week, losing launch momentum \u2192 Mitigation: Clear 72h gate criteria with daily war-room check-ins.",
+    "Risk: Pause drags beyond 1 week, losing launch momentum \u2192 Mitigation: Hard 48h escalation gate on KI-001; clear 72h resume criteria with daily war-room check-ins.",
     "Risk: Payment success rate degrades again under load \u2192 Mitigation: Isolate payment service from inference API; independent scaling policy."
   ],
   "follow_up_monitoring": [
@@ -143,10 +185,10 @@
     "Payment success rate \u2014 target: \u2265 99.0%",
     "KI-001 recurrence \u2014 zero tolerance after fix deployment",
     "Churn/cancellations \u2014 target: \u2264 15/day (currently 31/day, baseline 10/day)",
-    "NPS and CSAT \u2014 daily tracking; resume gate requires CSAT \u2265 3.8",
     "Social media sentiment \u2014 daily scan; escalate if negative trend resumes"
   ],
   "dissenting_opinions": [
-    "Risk/Critic (Roll Back, 68% confidence): KI-001 (draft data loss) is still in 'investigating' status after 10 days and has been reported by 3 users with Reddit amplification. At 25% rollout, ~130,000 users are exposed to a data-loss bug with no confirmed fix. The recovery trend is only 3 days old and untested at higher scale. Pausing still leaves users in a degraded state \u2014 a full rollback protects user trust while the team ships fixes and re-launches cleanly."
+    "Risk/Critic (Roll Back, 68% confidence): KI-001 (draft data loss) is still in 'investigating' status after 10 days and has been reported by 3 users with Reddit amplification. At 25% rollout, ~130,000 users are exposed to a data-loss bug with no confirmed fix. The recovery trend is only 3 days old and untested at higher scale. Pausing still leaves users in a degraded state \u2014 a full rollback protects user trust while the team ships fixes and re-launches cleanly.",
+    "Marketing & Comms (conditional): If KI-001 is not fixed within 48h, would shift recommendation to Roll Back. The brand cost of prolonged data-loss exposure outweighs the brand cost of pulling the feature."
   ]
 }

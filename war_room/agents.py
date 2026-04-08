@@ -1,18 +1,20 @@
 """
 Agent definitions for the war-room multi-agent system.
 
-Each agent receives the full dashboard snapshot and produces an AgentVerdict.
-The LLM is called via the OpenAI-compatible chat completions API so it works
-with OpenAI, Azure OpenAI, or any compatible provider.
+Phase 1 agents (PM, Data Analyst, Marketing/Comms) analyse the dashboard
+independently.  The Risk/Critic agent operates in Phase 2a — it reviews
+all Phase 1 verdicts and produces a challenge.  Phase 2b lets the original
+agents revise after seeing peers' verdicts and the critique.
 """
 
 from __future__ import annotations
 
 import json
 import textwrap
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
-from openai import OpenAI
+if TYPE_CHECKING:
+    from openai import OpenAI
 
 from .models import AgentVerdict, Decision
 
@@ -48,6 +50,19 @@ def _parse_verdict(raw: str, agent_name: str, role: str) -> AgentVerdict:
     )
 
 
+def format_verdicts_summary(verdicts: list[AgentVerdict]) -> str:
+    """Format a list of verdicts into a readable summary for LLM prompts."""
+    return "\n\n".join(
+        f"**{v.agent_name}** ({v.role}) → {v.decision.value} "
+        f"(confidence {v.confidence:.0%})\n"
+        f"Rationale: {v.rationale}\n"
+        f"Evidence: {'; '.join(v.key_evidence)}\n"
+        f"Recommended actions: {'; '.join(v.recommended_actions)}"
+        + (f"\nDissent: {v.dissent_notes}" if v.dissent_notes else "")
+        for v in verdicts
+    )
+
+
 # ── Base agent ──────────────────────────────────────────────────────────────
 
 class BaseAgent:
@@ -61,6 +76,8 @@ class BaseAgent:
         self.client = client
         self.model = model
 
+    # ── Phase 1: independent analysis ───────────────────────────────────
+
     def _build_user_message(self, dashboard: dict) -> str:
         return (
             "Here is the current launch dashboard data (10-day daily metrics, "
@@ -71,7 +88,7 @@ class BaseAgent:
         )
 
     def analyze(self, dashboard: dict) -> AgentVerdict:
-        """Call the LLM and return a structured AgentVerdict."""
+        """Phase 1: Call the LLM and return a structured AgentVerdict."""
         response = self.client.chat.completions.create(
             model=self.model,
             temperature=0.3,
@@ -83,8 +100,59 @@ class BaseAgent:
         raw = response.choices[0].message.content
         return _parse_verdict(raw, self.name, self.role)
 
+    # ── Phase 2b: revision after deliberation ───────────────────────────
 
-# ── Concrete agents ─────────────────────────────────────────────────────────
+    def revise(
+        self,
+        dashboard: dict,
+        own_verdict: AgentVerdict,
+        peer_verdicts: list[AgentVerdict],
+        critique: AgentVerdict,
+    ) -> AgentVerdict:
+        """Revise verdict after seeing peers' verdicts and the Risk/Critic's
+        challenge.  The agent may adjust its decision, confidence, or
+        rationale — or hold firm with stronger justification."""
+
+        peers_summary = format_verdicts_summary(peer_verdicts)
+        critique_summary = format_verdicts_summary([critique])
+
+        prompt = textwrap.dedent(f"""\
+            You previously submitted this verdict:
+            Decision: {own_verdict.decision.value} (confidence: {own_verdict.confidence:.0%})
+            Rationale: {own_verdict.rationale}
+            Evidence: {'; '.join(own_verdict.key_evidence)}
+
+            Here are the other agents' verdicts:
+            {peers_summary}
+
+            Here is the Risk/Critic's challenge:
+            {critique_summary}
+
+            Based on the other agents' perspectives and the Risk/Critic's
+            challenges, reconsider your position:
+            • Have any new arguments changed your view?
+            • You may adjust your decision, confidence, rationale, or actions.
+            • If you stand firm, strengthen your justification and address
+              the challenges directly.
+            • Use dissent_notes to flag any disagreements with the group.
+
+            Produce your REVISED verdict as a JSON object:
+            {_VERDICT_SCHEMA}
+        """)
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            temperature=0.3,
+            messages=[
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        raw = response.choices[0].message.content
+        return _parse_verdict(raw, self.name, self.role)
+
+
+# ── Concrete Phase-1 agents ────────────────────────────────────────────────
 
 class ProductManagerAgent(BaseAgent):
     name = "Product Manager"
@@ -152,18 +220,19 @@ class MarketingCommsAgent(BaseAgent):
     """)
 
 
+# ── Risk / Critic (Phase 2a agent) ─────────────────────────────────────────
+
 class RiskCriticAgent(BaseAgent):
     name = "Risk / Critic"
     role = "risk_critic"
     system_prompt = textwrap.dedent("""\
         You are the Risk Analyst and Devil's Advocate in a product-launch war room.
         Your responsibilities:
-        • Challenge optimistic assumptions made by other perspectives.
-        • Highlight worst-case scenarios and tail risks across all 9 metrics.
-        • Flag the critical known issue (KI-001: draft data loss) and assess
-          whether it alone warrants rollback.
+        • Challenge optimistic assumptions made by the other agents.
+        • Highlight worst-case scenarios and tail risks across all metrics.
+        • Flag critical known issues and assess whether they alone warrant rollback.
         • Assess cascading failure risks (e.g., latency → crashes → churn → revenue).
-        • Evaluate whether extrapolating from 25% rollout to 50-100% is safe.
+        • Evaluate whether extrapolating from current rollout to full rollout is safe.
         • Identify gaps in the data or areas where more evidence is needed.
         • Call out if the team may be suffering from sunk-cost or confirmation bias.
         • Consider payment failure rate trends and revenue impact.
@@ -173,35 +242,51 @@ class RiskCriticAgent(BaseAgent):
         Respond ONLY with the JSON verdict object.
     """)
 
+    def challenge(self, dashboard: dict, verdicts: list[AgentVerdict]) -> AgentVerdict:
+        """Phase 2a: Review all Phase 1 verdicts and produce a challenge verdict."""
+        verdicts_summary = format_verdicts_summary(verdicts)
 
-class EngineeringLeadAgent(BaseAgent):
-    name = "Engineering Lead"
-    role = "engineering_lead"
-    system_prompt = textwrap.dedent("""\
-        You are the Engineering Lead in a product-launch war room.
-        Your responsibilities:
-        • Assess technical health: crash rate, p95 latency, payment success rate,
-          and their 10-day trends.
-        • Evaluate the known issues list (especially KI-001 draft loss and KI-002
-          latency scaling) and their fix status.
-        • Determine whether the Day 7 hotfix is working based on post-fix metrics.
-        • Assess infrastructure readiness for expanding from 25% → 50% rollout.
-        • Evaluate whether a targeted hotfix vs. full rollback is feasible.
-        • Consider the cost and risk of rolling back vs. pausing vs. proceeding.
-        • Factor in the missing user-facing toggle (KI-004) and its engineering ETA.
+        prompt = textwrap.dedent(f"""\
+            All domain agents have submitted their independent verdicts for the
+            launch decision.  Review their assessments critically.
 
-        Focus on system reliability, SLAs, and engineering feasibility.
-        Your decision must be one of: Proceed, Pause, or Roll Back.
-        Respond ONLY with the JSON verdict object.
-    """)
+            ## Agent Verdicts
+            {verdicts_summary}
+
+            ## Dashboard Data
+            ```json
+            {json.dumps(dashboard, indent=2)}
+            ```
+
+            Your job:
+            1. Challenge the assumptions and reasoning of each agent.
+            2. Identify blind spots, biases (sunk-cost, anchoring, confirmation),
+               and risks the group may be overlooking.
+            3. Highlight worst-case scenarios and tail risks.
+            4. Request additional evidence where claims are unsubstantiated.
+            5. Produce your own verdict — you may agree or disagree with the
+               majority.
+
+            Produce your verdict as a JSON object:
+            {_VERDICT_SCHEMA}
+        """)
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            temperature=0.4,
+            messages=[
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        raw = response.choices[0].message.content
+        return _parse_verdict(raw, self.name, self.role)
 
 
 # ── Registry ────────────────────────────────────────────────────────────────
 
-ALL_AGENTS: list[type[BaseAgent]] = [
+PHASE1_AGENTS: list[type[BaseAgent]] = [
     ProductManagerAgent,
     DataAnalystAgent,
     MarketingCommsAgent,
-    RiskCriticAgent,
-    EngineeringLeadAgent,
 ]

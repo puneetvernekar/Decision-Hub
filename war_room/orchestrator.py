@@ -1,8 +1,9 @@
 """
-War-room orchestrator.
+War-room orchestrator — 3-phase coordinated decision process.
 
-Coordinates all agents, collects individual verdicts, runs a synthesis
-round, and produces the final WarRoomOutcome.
+Phase 1 — Independent analysis by PM, Data Analyst, Marketing/Comms (parallel)
+Phase 2 — Risk/Critic challenges (2a) + agents revise their verdicts (2b, parallel)
+Phase 3 — Director / Senior PM synthesises the final go/no-go decision
 """
 
 from __future__ import annotations
@@ -10,11 +11,12 @@ from __future__ import annotations
 import json
 import textwrap
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional
+from typing import TYPE_CHECKING
 
-from openai import OpenAI
+if TYPE_CHECKING:
+    from openai import OpenAI
 
-from .agents import ALL_AGENTS, BaseAgent
+from .agents import PHASE1_AGENTS, RiskCriticAgent, BaseAgent, format_verdicts_summary
 from .models import AgentVerdict, Decision, WarRoomOutcome
 
 
@@ -25,19 +27,17 @@ class WarRoom:
         self,
         client: OpenAI,
         model: str = "gpt-4o",
-        agent_classes: Optional[list[type[BaseAgent]]] = None,
-        max_parallel: int = 5,
+        max_parallel: int = 3,
     ):
         self.client = client
         self.model = model
-        self.agent_classes = agent_classes or ALL_AGENTS
         self.max_parallel = max_parallel
 
-    # ── Phase 1: Individual agent analysis ──────────────────────────────
+    # ── Phase 1: Independent analysis ───────────────────────────────────
 
-    def _run_agents(self, dashboard: dict) -> list[AgentVerdict]:
-        """Run all agents in parallel and collect their verdicts."""
-        agents = [cls(self.client, self.model) for cls in self.agent_classes]
+    def _phase1_analyze(self, dashboard: dict) -> list[AgentVerdict]:
+        """Run PM, Data Analyst, Marketing/Comms in parallel."""
+        agents = [cls(self.client, self.model) for cls in PHASE1_AGENTS]
         verdicts: list[AgentVerdict] = []
 
         with ThreadPoolExecutor(max_workers=self.max_parallel) as pool:
@@ -52,74 +52,69 @@ class WarRoom:
 
         return verdicts
 
-    # ── Phase 2: Critique round ─────────────────────────────────────────
+    # ── Phase 2a: Risk/Critic challenge ─────────────────────────────────
 
-    def _critique_round(
-        self, dashboard: dict, verdicts: list[AgentVerdict]
-    ) -> str:
-        """Ask the Risk/Critic agent to review all other verdicts."""
-        verdicts_summary = "\n\n".join(
-            f"**{v.agent_name}** ({v.role}) → {v.decision.value} "
-            f"(confidence {v.confidence:.0%})\n"
-            f"Rationale: {v.rationale}\n"
-            f"Evidence: {'; '.join(v.key_evidence)}"
-            for v in verdicts
-        )
-        prompt = textwrap.dedent(f"""\
-            You are the Risk Analyst in a product-launch war room.
-            All agents have submitted their individual verdicts.
+    def _phase2a_critique(self, dashboard: dict, verdicts: list[AgentVerdict]) -> AgentVerdict:
+        """Risk/Critic reviews all Phase 1 verdicts and produces a challenge."""
+        critic = RiskCriticAgent(self.client, self.model)
+        return critic.challenge(dashboard, verdicts)
 
-            Here are the verdicts:
-            {verdicts_summary}
+    # ── Phase 2b: Agent revision ────────────────────────────────────────
 
-            Dashboard data:
-            ```json
-            {json.dumps(dashboard, indent=2)}
-            ```
-
-            Review the verdicts critically. Identify:
-            1. Agreements and disagreements between agents.
-            2. Blind spots or assumptions that are not backed by data.
-            3. Any additional risks the group may be overlooking.
-
-            Return your critique as plain text (2-4 paragraphs).
-        """)
-
-        response = self.client.chat.completions.create(
-            model=self.model,
-            temperature=0.4,
-            messages=[
-                {"role": "system", "content": "You are a senior risk analyst providing a critique round."},
-                {"role": "user", "content": prompt},
-            ],
-        )
-        return response.choices[0].message.content
-
-    # ── Phase 3: Synthesis & final decision ─────────────────────────────
-
-    def _synthesize(
+    def _phase2b_revise(
         self,
         dashboard: dict,
-        verdicts: list[AgentVerdict],
-        critique: str,
+        initial_verdicts: list[AgentVerdict],
+        critique: AgentVerdict,
+    ) -> list[AgentVerdict]:
+        """Each Phase 1 agent revises after seeing peers + critique (parallel)."""
+        agents = [cls(self.client, self.model) for cls in PHASE1_AGENTS]
+        revised: list[AgentVerdict] = []
+
+        with ThreadPoolExecutor(max_workers=self.max_parallel) as pool:
+            futures = {}
+            for agent in agents:
+                own_verdict = next(v for v in initial_verdicts if v.role == agent.role)
+                peer_verdicts = [v for v in initial_verdicts if v.role != agent.role]
+                futures[pool.submit(
+                    agent.revise, dashboard, own_verdict, peer_verdicts, critique
+                )] = agent
+
+            for future in as_completed(futures):
+                agent = futures[future]
+                try:
+                    verdict = future.result()
+                    revised.append(verdict)
+                except Exception as exc:
+                    print(f"  ⚠  {agent.name} revision failed: {exc}")
+
+        return revised
+
+    # ── Phase 3: Director / Senior PM synthesis ─────────────────────────
+
+    def _phase3_synthesize(
+        self,
+        initial_verdicts: list[AgentVerdict],
+        critique: AgentVerdict,
+        revised_verdicts: list[AgentVerdict],
     ) -> WarRoomOutcome:
-        """Synthesise all inputs into a final structured decision."""
-        verdicts_json = json.dumps(
-            [
-                {
-                    "agent": v.agent_name,
-                    "role": v.role,
-                    "decision": v.decision.value,
-                    "confidence": v.confidence,
-                    "rationale": v.rationale,
-                    "key_evidence": v.key_evidence,
-                    "recommended_actions": v.recommended_actions,
-                    "dissent_notes": v.dissent_notes,
-                }
-                for v in verdicts
-            ],
-            indent=2,
-        )
+        """Director / Senior PM makes the final go/no-go decision."""
+
+        initial_summary = format_verdicts_summary(initial_verdicts)
+        critique_summary = format_verdicts_summary([critique])
+        revised_summary = format_verdicts_summary(revised_verdicts)
+
+        # Detect who changed position during deliberation
+        changes = []
+        for init in initial_verdicts:
+            for rev in revised_verdicts:
+                if init.role == rev.role:
+                    if init.decision != rev.decision or abs(init.confidence - rev.confidence) > 0.03:
+                        changes.append(
+                            f"{init.agent_name}: {init.decision.value} ({init.confidence:.0%}) "
+                            f"→ {rev.decision.value} ({rev.confidence:.0%})"
+                        )
+        changes_text = "\n".join(changes) if changes else "No agents changed their position."
 
         schema = textwrap.dedent("""\
         {
@@ -132,26 +127,30 @@ class WarRoom:
         }""")
 
         prompt = textwrap.dedent(f"""\
-            You are the War-Room Facilitator synthesising the final launch decision.
+            You are the Director of Product / Senior PM making the final launch
+            decision in a war-room session.  You have authority to make the
+            go/no-go call after hearing all perspectives.
 
-            ## Individual Verdicts
-            ```json
-            {verdicts_json}
-            ```
+            ## Phase 1 — Initial Verdicts
+            {initial_summary}
 
-            ## Critique Round
-            {critique}
+            ## Phase 2a — Risk/Critic's Challenges
+            {critique_summary}
 
-            ## Dashboard Snapshot (for reference)
-            ```json
-            {json.dumps(dashboard, indent=2)}
-            ```
+            ## Phase 2b — Revised Verdicts (after deliberation)
+            {revised_summary}
+
+            ## Position Changes During Deliberation
+            {changes_text}
 
             Using all of the above, produce the FINAL war-room decision.
             Rules:
             • The decision must be exactly one of: Proceed, Pause, Roll Back.
             • Weight higher-confidence verdicts and data-backed reasoning more.
             • If agents are evenly split, lean toward caution (Pause > Proceed).
+            • Before deciding, identify the strongest argument AGAINST the
+              majority position and explain why it does or doesn't change
+              your conclusion.
             • The action plan must be concrete, sequenced, and assignable.
             • Capture any dissenting opinions faithfully.
 
@@ -165,7 +164,11 @@ class WarRoom:
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an expert facilitator making the final launch decision for the war room.",
+                    "content": (
+                        "You are a senior Director of Product making the final "
+                        "launch decision.  You are impartial, data-driven, and "
+                        "prioritise user trust and business sustainability."
+                    ),
                 },
                 {"role": "user", "content": prompt},
             ],
@@ -179,7 +182,9 @@ class WarRoom:
         return WarRoomOutcome(
             final_decision=Decision(payload["final_decision"]),
             decision_rationale=payload["decision_rationale"],
-            individual_verdicts=verdicts,
+            initial_verdicts=initial_verdicts,
+            critique=critique,
+            revised_verdicts=revised_verdicts,
             action_plan=payload["action_plan"],
             risks_and_mitigations=payload["risks_and_mitigations"],
             follow_up_monitoring=payload["follow_up_monitoring"],
@@ -189,7 +194,7 @@ class WarRoom:
     # ── Public API ──────────────────────────────────────────────────────
 
     def run(self, dashboard: dict, verbose: bool = True) -> WarRoomOutcome:
-        """Execute the full war-room session and return the outcome."""
+        """Execute the full 3-phase war-room session and return the outcome."""
         if verbose:
             print("=" * 60)
             print("  WAR ROOM SESSION — Launch Decision")
@@ -199,31 +204,49 @@ class WarRoom:
                   f"({dashboard.get('rollout_schedule', '')})")
             print(f"  Window  : {len(dashboard.get('daily_metrics', []))} days of data\n")
 
-        # Phase 1
+        # Phase 1 — Independent Analysis
         if verbose:
             print("─" * 60)
-            print("  Phase 1 — Individual Agent Analysis")
+            print("  Phase 1 — Independent Agent Analysis")
             print("─" * 60)
-        verdicts = self._run_agents(dashboard)
+        initial_verdicts = self._phase1_analyze(dashboard)
         if verbose:
-            for v in verdicts:
+            for v in initial_verdicts:
                 print(f"\n  [{v.agent_name}]  →  {v.decision.value}  "
                       f"(confidence: {v.confidence:.0%})")
                 print(f"    Rationale: {v.rationale[:120]}...")
 
-        # Phase 2
+        # Phase 2a — Risk/Critic Challenge
         if verbose:
             print(f"\n{'─' * 60}")
-            print("  Phase 2 — Critique Round")
+            print("  Phase 2a — Risk/Critic Challenge")
             print("─" * 60)
-        critique = self._critique_round(dashboard, verdicts)
+        critique = self._phase2a_critique(dashboard, initial_verdicts)
         if verbose:
-            print(f"\n{critique[:500]}...\n" if len(critique) > 500 else f"\n{critique}\n")
+            print(f"\n  [Risk / Critic]  →  {critique.decision.value}  "
+                  f"(confidence: {critique.confidence:.0%})")
+            print(f"    Rationale: {critique.rationale[:200]}...")
 
-        # Phase 3
+        # Phase 2b — Revision
         if verbose:
+            print(f"\n{'─' * 60}")
+            print("  Phase 2b — Agent Revision (after deliberation)")
             print("─" * 60)
-            print("  Phase 3 — Synthesis & Final Decision")
+        revised_verdicts = self._phase2b_revise(dashboard, initial_verdicts, critique)
+        if verbose:
+            for v in revised_verdicts:
+                init = next((i for i in initial_verdicts if i.role == v.role), None)
+                change = ""
+                if init and (init.decision != v.decision or abs(init.confidence - v.confidence) > 0.03):
+                    change = f"  ← was {init.decision.value} ({init.confidence:.0%})"
+                print(f"\n  [{v.agent_name}]  →  {v.decision.value}  "
+                      f"(confidence: {v.confidence:.0%}){change}")
+                print(f"    Rationale: {v.rationale[:120]}...")
+
+        # Phase 3 — Director Synthesis
+        if verbose:
+            print(f"\n{'─' * 60}")
+            print("  Phase 3 — Director / Senior PM Final Decision")
             print("─" * 60)
-        outcome = self._synthesize(dashboard, verdicts, critique)
+        outcome = self._phase3_synthesize(initial_verdicts, critique, revised_verdicts)
         return outcome

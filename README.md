@@ -8,45 +8,64 @@ with a concrete action plan.
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   War Room Orchestrator              │
-│                                                     │
-│  Phase 1 — Individual Analysis (parallel)           │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐            │
-│  │    PM    │ │  Data    │ │Marketing │            │
-│  │  Agent   │ │ Analyst  │ │ & Comms  │            │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘            │
-│  ┌────┴─────┐ ┌────┴─────┐                         │
-│  │  Risk /  │ │  Engg    │                         │
-│  │  Critic  │ │  Lead    │                         │
-│  └────┬─────┘ └────┬─────┘                         │
-│       │             │                               │
-│  Phase 2 — Critique Round                           │
-│       Risk/Critic reviews all verdicts              │
-│       │                                             │
-│  Phase 3 — Synthesis                                │
-│       Facilitator LLM produces final decision       │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                    War Room Orchestrator                  │
+│                                                          │
+│  Phase 1 — Independent Analysis (parallel)               │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐               │
+│  │    PM    │  │  Data    │  │Marketing │               │
+│  │  Agent   │  │ Analyst  │  │ & Comms  │               │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘               │
+│       │              │             │                      │
+│       └──────────────┼─────────────┘                      │
+│                      ▼                                    │
+│  Phase 2a — Risk/Critic Challenge                        │
+│  ┌──────────────────────────────────────┐                │
+│  │  Risk/Critic reviews all 3 verdicts  │                │
+│  │  → challenges + own verdict          │                │
+│  └──────────────────┬───────────────────┘                │
+│                     ▼                                     │
+│  Phase 2b — Deliberation & Revision (parallel)           │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐               │
+│  │ PM revise│  │DA revise │  │MC revise │               │
+│  │ (sees    │  │ (sees    │  │ (sees    │               │
+│  │ peers +  │  │ peers +  │  │ peers +  │               │
+│  │ critique)│  │ critique)│  │ critique)│               │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘               │
+│       │              │             │                      │
+│       └──────────────┼─────────────┘                      │
+│                      ▼                                    │
+│  Phase 3 — Director / Senior PM Synthesis                │
+│  ┌──────────────────────────────────────┐                │
+│  │  Receives initial + critique +       │                │
+│  │  revised verdicts → final decision   │                │
+│  └──────────────────────────────────────┘                │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ### Agents
 
-| Agent | Role |
-|---|---|
-| **Product Manager** | Success criteria, user impact, go/no-go framing |
-| **Data Analyst** | Quantitative trends, anomalies, confidence levels |
-| **Marketing & Comms** | Sentiment, brand risk, communication actions |
-| **Risk / Critic** | Devil's advocate, worst-case scenarios, bias checks |
-| **Engineering Lead** | Technical health, hotfix feasibility, rollback cost |
+| Agent | Phase | Role |
+|---|---|---|
+| **Product Manager** | 1 & 2b | Success criteria, user impact, go/no-go framing |
+| **Data Analyst** | 1 & 2b | Quantitative trends, anomalies, confidence levels |
+| **Marketing & Comms** | 1 & 2b | Sentiment, brand risk, communication actions |
+| **Risk / Critic** | 2a | Devil's advocate — challenges assumptions, highlights risks |
+| **Director / Senior PM** | 3 | Final authority — synthesises all inputs into go/no-go decision |
 
 ### Three-Phase Process
 
-1. **Individual Analysis** — All 5 agents analyse the dashboard in parallel and
-   submit independent verdicts (decision + confidence + evidence + actions).
-2. **Critique Round** — The Risk/Critic agent reviews all verdicts, identifies
-   blind spots, and challenges weak reasoning.
-3. **Synthesis** — A facilitator LLM weighs all verdicts and the critique to
-   produce the final decision, action plan, and risk mitigations.
+1. **Independent Analysis** — PM, Data Analyst, and Marketing/Comms analyse the
+   dashboard in parallel and submit independent verdicts.
+2. **Deliberation** —
+   - **(2a)** The Risk/Critic reviews all Phase 1 verdicts, challenges
+     assumptions, and produces its own verdict.
+   - **(2b)** Each Phase 1 agent sees the other agents' verdicts plus the
+     Risk/Critic's challenges, and submits a **revised** verdict — adjusting
+     decision, confidence, or rationale as warranted.
+3. **Director Synthesis** — A Director / Senior PM receives the initial verdicts,
+   the Risk/Critic's challenge, and the revised verdicts.  They make the final
+   go/no-go call with an action plan, risk mitigations, and monitoring gates.
 
 ## Mock Scenario
 
@@ -91,8 +110,8 @@ python main.py --offline --json
     ├── __init__.py
     ├── mock_dashboard.py      # Mock metrics, KPIs, user feedback, success criteria
     ├── models.py              # AgentVerdict, WarRoomOutcome, Decision enum
-    ├── agents.py              # 5 agent classes with role-specific system prompts
-    └── orchestrator.py        # 3-phase war-room coordination logic
+    ├── agents.py              # 4 agent classes (PM, Data, Marketing, Risk/Critic)
+    └── orchestrator.py        # 3-phase war-room orchestration with feedback loop
 ```
 
 ## Output
@@ -101,7 +120,9 @@ The system produces:
 
 - **Final Decision**: Proceed / Pause / Roll Back
 - **Decision Rationale**: Why this decision was reached
-- **Individual Verdicts**: Each agent's independent assessment
+- **Initial Verdicts**: Phase 1 independent assessments (PM, Data, Marketing)
+- **Critique**: Risk/Critic's challenge verdict with identified blind spots
+- **Revised Verdicts**: Phase 2b assessments after deliberation (showing what changed)
 - **Action Plan**: Sequenced, assignable steps
 - **Risks & Mitigations**: Identified risks with countermeasures
 - **Follow-up Monitoring**: Metrics and gates to track

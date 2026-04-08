@@ -1,7 +1,7 @@
 """
 War Room — Multi-Agent Launch Decision System
 ==============================================
-Run:  python main.py [--model MODEL] [--offline]
+Run:  python main.py [--model MODEL] [--offline] [--json]
 
 --offline  runs a deterministic simulation without calling any LLM,
            useful for testing the pipeline end-to-end.
@@ -21,29 +21,68 @@ from war_room.models import AgentVerdict, Decision, WarRoomOutcome
 
 # ── Pretty-print helpers ────────────────────────────────────────────────────
 
+def _verdict_to_dict(v: AgentVerdict) -> dict:
+    """Convert an AgentVerdict to a JSON-serialisable dict."""
+    return {
+        "agent": v.agent_name,
+        "role": v.role,
+        "decision": v.decision.value,
+        "confidence": v.confidence,
+        "rationale": v.rationale,
+        "key_evidence": v.key_evidence,
+        "recommended_actions": v.recommended_actions,
+        "dissent_notes": v.dissent_notes,
+    }
+
+
 def _print_outcome(outcome: WarRoomOutcome) -> None:
     W = 64
+    RESET = "\033[0m"
+    decision_color = {
+        Decision.PROCEED: "\033[92m",    # green
+        Decision.PAUSE: "\033[93m",      # yellow
+        Decision.ROLL_BACK: "\033[91m",  # red
+    }
+    color = decision_color.get(outcome.final_decision, "")
+
     print("\n" + "=" * W)
     print("  FINAL WAR-ROOM DECISION")
     print("=" * W)
-
-    decision_color = {
-        Decision.PROCEED: "\033[92m",   # green
-        Decision.PAUSE: "\033[93m",     # yellow
-        Decision.ROLL_BACK: "\033[91m", # red
-    }
-    RESET = "\033[0m"
-    color = decision_color.get(outcome.final_decision, "")
     print(f"\n  Decision:  {color}{outcome.final_decision.value}{RESET}\n")
     print(f"  Rationale:\n{textwrap.fill(outcome.decision_rationale, W, initial_indent='    ', subsequent_indent='    ')}\n")
 
+    # Phase 1 — Initial verdicts
     print("─" * W)
-    print("  Individual Verdicts")
+    print("  Phase 1 — Initial Verdicts")
     print("─" * W)
-    for v in outcome.individual_verdicts:
+    for v in outcome.initial_verdicts:
         print(f"  • {v.agent_name:22s} → {v.decision.value:10s} (conf: {v.confidence:.0%})")
     print()
 
+    # Phase 2a — Risk/Critic challenge
+    print("─" * W)
+    print("  Phase 2a — Risk/Critic Challenge")
+    print("─" * W)
+    c = outcome.critique
+    print(f"  • {c.agent_name:22s} → {c.decision.value:10s} (conf: {c.confidence:.0%})")
+    # Show first 200 chars of rationale
+    wrapped = textwrap.fill(c.rationale[:200], W - 4, initial_indent="    ", subsequent_indent="    ")
+    print(wrapped)
+    print()
+
+    # Phase 2b — Revised verdicts
+    print("─" * W)
+    print("  Phase 2b — Revised Verdicts (after deliberation)")
+    print("─" * W)
+    for v in outcome.revised_verdicts:
+        init = next((i for i in outcome.initial_verdicts if i.role == v.role), None)
+        change = ""
+        if init and (init.decision != v.decision or abs(init.confidence - v.confidence) > 0.03):
+            change = f"  ← was {init.decision.value} ({init.confidence:.0%})"
+        print(f"  • {v.agent_name:22s} → {v.decision.value:10s} (conf: {v.confidence:.0%}){change}")
+    print()
+
+    # Action plan
     print("─" * W)
     print("  Action Plan")
     print("─" * W)
@@ -51,6 +90,7 @@ def _print_outcome(outcome: WarRoomOutcome) -> None:
         print(f"  {i}. {step}")
     print()
 
+    # Risks
     print("─" * W)
     print("  Risks & Mitigations")
     print("─" * W)
@@ -58,6 +98,7 @@ def _print_outcome(outcome: WarRoomOutcome) -> None:
         print(f"  • {item}")
     print()
 
+    # Monitoring
     print("─" * W)
     print("  Follow-up Monitoring")
     print("─" * W)
@@ -65,6 +106,7 @@ def _print_outcome(outcome: WarRoomOutcome) -> None:
         print(f"  • {item}")
     print()
 
+    # Dissent
     if outcome.dissenting_opinions:
         print("─" * W)
         print("  Dissenting Opinions")
@@ -91,26 +133,18 @@ def _run_offline(dashboard: dict) -> WarRoomOutcome:
     latest = daily[-1]  # Day 10
     n_days = len(daily)
 
-    # Derive aggregates from daily metrics
+    # Derived aggregates
     peak_crash = max(d["crash_rate_pct"] for d in daily)
     peak_latency = max(d["p95_latency_ms"] for d in daily)
     peak_tickets = max(d["support_tickets"] for d in daily)
     peak_churn = max(d["churn_cancellations"] for d in daily)
-    total_tickets = sum(d["support_tickets"] for d in daily)
     total_cancellations = sum(d["churn_cancellations"] for d in daily)
     avg_churn_per_day = total_cancellations / n_days
     latest_crash = latest["crash_rate_pct"]
     latest_latency = latest["p95_latency_ms"]
 
-    # D7 retention (available from Day 7 onward)
     d7_values = [d["retention_d7_pct"] for d in daily if d["retention_d7_pct"] is not None]
     latest_d7 = d7_values[-1] if d7_values else None
-
-    # Recovery trend: compare Day 10 vs Day 6 (peak trouble)
-    recovering = (
-        daily[-1]["crash_rate_pct"] < daily[5]["crash_rate_pct"]
-        and daily[-1]["p95_latency_ms"] < daily[5]["p95_latency_ms"]
-    )
 
     # Feedback analysis
     feedback = dashboard["user_feedback"]
@@ -118,12 +152,11 @@ def _run_offline(dashboard: dict) -> WarRoomOutcome:
     pos_count = sum(1 for f in feedback if f["sentiment"] == "positive")
     neu_count = len(feedback) - neg_count - pos_count
 
-    # Critical known issues still open
-    critical_open = [ki for ki in known_issues if ki["severity"] == "critical" and "fix" not in ki["status"]]
+    # ════════════════════════════════════════════════════════════════════
+    #  PHASE 1 — Initial independent verdicts (PM, Data, Marketing)
+    # ════════════════════════════════════════════════════════════════════
 
-    # ── Simulated agent verdicts ────────────────────────────────────────
-
-    pm_verdict = AgentVerdict(
+    pm_initial = AgentVerdict(
         agent_name="Product Manager",
         role="pm",
         decision=Decision.PAUSE,
@@ -152,7 +185,7 @@ def _run_offline(dashboard: dict) -> WarRoomOutcome:
         ],
     )
 
-    data_verdict = AgentVerdict(
+    data_initial = AgentVerdict(
         agent_name="Data Analyst",
         role="data_analyst",
         decision=Decision.PAUSE,
@@ -160,9 +193,8 @@ def _run_offline(dashboard: dict) -> WarRoomOutcome:
         rationale=(
             f"Crash rate peaked at {peak_crash}% on Day 6 ({peak_crash/baseline['crash_rate_pct']:.1f}x "
             f"baseline, threshold {criteria['max_crash_rate_pct']}%). Post-hotfix recovery is clear: "
-            f"Day 10 crash rate {latest_crash}% is {'above' if latest_crash > criteria['max_crash_rate_pct'] else 'at'} "
-            f"the {criteria['max_crash_rate_pct']}% threshold. P95 latency peaked at {peak_latency}ms "
-            f"(Day 6), now {latest_latency}ms — {'within' if latest_latency <= criteria['max_p95_latency_ms'] else 'still above'} "
+            f"Day 10 crash rate {latest_crash}% is above the {criteria['max_crash_rate_pct']}% threshold. "
+            f"P95 latency peaked at {peak_latency}ms (Day 6), now {latest_latency}ms — within "
             f"the {criteria['max_p95_latency_ms']}ms target. "
             f"Payment success rate dipped to {min(d['payment_success_pct'] for d in daily)}% on Day 6 "
             f"(threshold: {criteria['min_payment_success_pct']}%). Now at {latest['payment_success_pct']}%. "
@@ -188,7 +220,7 @@ def _run_offline(dashboard: dict) -> WarRoomOutcome:
         ],
     )
 
-    marketing_verdict = AgentVerdict(
+    marketing_initial = AgentVerdict(
         agent_name="Marketing & Comms",
         role="marketing_comms",
         decision=Decision.PAUSE,
@@ -201,7 +233,6 @@ def _run_offline(dashboard: dict) -> WarRoomOutcome:
             f"praising the feature (#35) and a sales email auto-complete incident that could have "
             f"cost a deal (#34). App store ratings are polarised (1-star and 5-star). "
             f"Reddit thread about draft data loss (PSA post) has amplification risk. "
-            f"Sentiment is skewed negative in the Days 4-6 window. "
             f"Post-hotfix sentiment (Days 8-10) is more positive, but the missing opt-out toggle "
             f"is a persistent irritant across all channels."
         ),
@@ -212,7 +243,7 @@ def _run_offline(dashboard: dict) -> WarRoomOutcome:
             "Critical outlier: draft data loss creating PSA-style Reddit post (amplification risk)",
             "Critical outlier: sales email auto-complete incident — potential enterprise deal risk",
             "Positive outlier: accessibility user (#35) — strong advocacy potential if feature preserved",
-            f"App store: polarised 1-star / 5-star reviews",
+            "App store: polarised 1-star / 5-star reviews",
         ],
         recommended_actions=[
             "Issue transparent status update: acknowledge performance issues, draft-loss bug, and opt-out gap.",
@@ -223,24 +254,34 @@ def _run_offline(dashboard: dict) -> WarRoomOutcome:
         ],
     )
 
-    risk_verdict = AgentVerdict(
+    initial_verdicts = [pm_initial, data_initial, marketing_initial]
+
+    # ════════════════════════════════════════════════════════════════════
+    #  PHASE 2a — Risk/Critic challenge
+    # ════════════════════════════════════════════════════════════════════
+
+    critique = AgentVerdict(
         agent_name="Risk / Critic",
         role="risk_critic",
         decision=Decision.ROLL_BACK,
         confidence=0.68,
         rationale=(
+            f"All three agents recommend Pause, but I challenge their shared assumption that "
+            f"the recovery trend is sufficient to hold at 25%. "
             f"KI-001 (draft data loss) remains in 'investigating' status after 10 days — this is a "
-            f"critical severity bug that has been reported by 3 separate users and amplified on Reddit. "
-            f"At 25% rollout ({dashboard['total_user_base'] * 25 // 100:,} users exposed), the blast "
-            f"radius for a data-loss bug is unacceptable. "
-            f"Cancellations averaged {avg_churn_per_day:.0f}/day over 10 days vs {baseline['avg_churn_cancellations_per_day']}/day "
-            f"baseline — a {avg_churn_per_day / baseline['avg_churn_cancellations_per_day']:.1f}x increase that "
-            f"would scale further at full rollout. D7 retention at {latest_d7}% is below the "
-            f"{criteria['min_retention_d7_pct']}% threshold — the feature may be driving users away. "
-            f"The Day 7 hotfix improved latency but crash rate ({latest_crash}%) still exceeds the "
-            f"{criteria['max_crash_rate_pct']}% threshold. Extrapolating to 50% rollout carries "
-            f"infrastructure risk given KI-002's partial fix status. The team may be anchored on "
-            f"the recovery trend rather than the absolute breach of success criteria."
+            f"critical severity bug reported by 3 users and amplified on Reddit. At 25% rollout "
+            f"({dashboard['total_user_base'] * 25 // 100:,} users exposed), the blast radius for a "
+            f"data-loss bug is unacceptable. The PM's focus on funnel completion (28.5%) is an "
+            f"anchoring bias — strong adoption means MORE users are exposed to the data-loss risk. "
+            f"The Data Analyst notes 3 of 9 metrics still breach thresholds but still recommends Pause; "
+            f"this conflates 'improving' with 'acceptable'. The Marketing agent correctly identifies "
+            f"the amplification risk but underweights it — a single viral thread about data loss can "
+            f"do more brand damage than all the performance complaints combined. "
+            f"Cancellations averaged {avg_churn_per_day:.0f}/day over 10 days vs "
+            f"{baseline['avg_churn_cancellations_per_day']}/day baseline — a "
+            f"{avg_churn_per_day / baseline['avg_churn_cancellations_per_day']:.1f}x increase. "
+            f"The recovery trend is only 3 days old and untested at higher rollout. "
+            f"I recommend Roll Back to protect user trust while fixes are shipped."
         ),
         key_evidence=[
             f"KI-001 (critical): draft data loss — still 'investigating' after 10 days",
@@ -249,6 +290,7 @@ def _run_offline(dashboard: dict) -> WarRoomOutcome:
             f"Crash rate Day 10: {latest_crash}% — still above {criteria['max_crash_rate_pct']}% threshold",
             f"Payment success dip to {min(d['payment_success_pct'] for d in daily)}% signals infrastructure fragility",
             f"3 of 9 metrics still breaching thresholds on Day 10",
+            f"PM's 28.5% funnel adoption = more users exposed to data-loss bug (anchoring risk)",
         ],
         recommended_actions=[
             "Roll back to pre-launch state for the 25% cohort — data-loss risk is too high.",
@@ -266,82 +308,150 @@ def _run_offline(dashboard: dict) -> WarRoomOutcome:
         ),
     )
 
-    eng_verdict = AgentVerdict(
-        agent_name="Engineering Lead",
-        role="engineering_lead",
+    # ════════════════════════════════════════════════════════════════════
+    #  PHASE 2b — Revised verdicts (after seeing peers + critique)
+    # ════════════════════════════════════════════════════════════════════
+
+    pm_revised = AgentVerdict(
+        agent_name="Product Manager",
+        role="pm",
         decision=Decision.PAUSE,
-        confidence=0.76,
+        confidence=0.65,
         rationale=(
-            f"The Day 7 hotfix materially improved performance: latency dropped from "
-            f"{peak_latency}ms → {latest_latency}ms ({latest_latency / baseline['p95_latency_ms']:.1f}x "
-            f"baseline, {'within' if latest_latency <= criteria['max_p95_latency_ms'] else 'near'} the "
-            f"{criteria['max_p95_latency_ms']}ms target). Crash rate improved from {peak_crash}% → "
-            f"{latest_crash}% but still exceeds the {criteria['max_crash_rate_pct']}% threshold. "
-            f"KI-001 (draft loss race condition) is the highest-priority item — root cause is identified "
-            f"(auto-save debounce vs suggestion overlay teardown) and a fix is feasible in 24-48h. "
-            f"KI-002 (latency scaling) hotfix is deployed; further tuning requires load testing at 50% "
-            f"traffic before expansion. KI-004 (opt-out toggle) is ~4 engineering days from ship. "
-            f"Full rollback is costly (~6 engineer-hours + deployment risk + user confusion) and "
-            f"would lose the 28.5% adoption signal. A pause + targeted fixes is the better path."
+            f"After reviewing the Risk/Critic's challenge, I acknowledge the KI-001 data-loss "
+            f"concern is more urgent than my initial framing suggested. The 28.5% funnel adoption "
+            f"IS a double-edged sword — high engagement means more users exposed to the bug. "
+            f"However, I maintain Pause over Roll Back: the Day 7 hotfix shows the engineering "
+            f"team can ship targeted fixes, and rolling back would lose the adoption signal and "
+            f"create user confusion. My confidence is lower (65% vs 72%) because the D7 retention "
+            f"decline ({latest_d7}% vs {criteria['min_retention_d7_pct']}% target) combined with "
+            f"the unresolved KI-001 makes the risk profile worse than I initially weighted. "
+            f"I now prioritise KI-001 fix as the #1 gate — above the opt-out toggle."
         ),
         key_evidence=[
-            f"Latency: {peak_latency}ms (Day 6) → {latest_latency}ms (Day 10) — hotfix working",
-            f"Crash rate: {peak_crash}% → {latest_crash}% — improving but still above {criteria['max_crash_rate_pct']}%",
-            "KI-001 root cause identified: race condition in auto-save debounce — fix ETA 24-48h",
-            "KI-002 hotfix deployed Day 7; needs load test at 50% before expansion",
-            "KI-004 opt-out toggle: ~4 engineering days (aligns with v4.12.1 plan)",
-            f"Rollback cost: ~6 engineer-hours + deployment risk + loss of {latest['feature_funnel_completion_pct']}% funnel adoption cohort",
-            f"Payment success recovered: {latest['payment_success_pct']}% (correlated with latency fix)",
+            f"Adjusted: KI-001 data-loss risk elevated — 130k users exposed with no confirmed fix",
+            f"D7 retention: {latest_d7}% still declining — cannot confirm feature-driven vs performance-driven",
+            f"Funnel adoption 28.5% is strong but increases blast radius for data-loss bug",
+            f"Data Analyst's evidence on 3/9 metric breaches reinforces caution",
         ],
         recommended_actions=[
-            "P0: Fix KI-001 (draft loss race condition) within 48h — add mutex on auto-save during overlay transitions.",
-            "P1: Run load test simulating 50% traffic against inference API before any expansion.",
-            "P1: Ship opt-out toggle (KI-004) — fast-track from v4.12.1 plan.",
-            "Freeze rollout at 25% with automated gate: crash_rate < 0.75% AND latency < 300ms for 72h.",
-            "Add server-side draft backup as defence-in-depth against future data-loss regressions.",
+            "Freeze rollout at 25% — KI-001 fix is now the #1 gate (above opt-out toggle).",
+            "Mandate KI-001 fix within 48h as a hard prerequisite for maintaining current rollout.",
+            "If KI-001 is not fixed in 48h, escalate to Roll Back discussion.",
+            "Run a D7 retention deep-dive to separate performance-driven churn from feature-driven churn.",
         ],
     )
 
-    verdicts = [pm_verdict, data_verdict, marketing_verdict, risk_verdict, eng_verdict]
+    data_revised = AgentVerdict(
+        agent_name="Data Analyst",
+        role="data_analyst",
+        decision=Decision.PAUSE,
+        confidence=0.80,
+        rationale=(
+            f"The Risk/Critic's challenge on KI-001 is valid — data-loss is a non-metric risk "
+            f"that my quantitative analysis cannot fully capture. However, the metric trends "
+            f"support Pause, not Roll Back: crash rate is on a clear downward trajectory "
+            f"({peak_crash}% → {latest_crash}%), latency is within target ({latest_latency}ms "
+            f"< {criteria['max_p95_latency_ms']}ms), and payment success has recovered to "
+            f"{latest['payment_success_pct']}%. The critique that 'improving ≠ acceptable' is "
+            f"fair — I've slightly lowered my confidence to 80%. The 3 breaching metrics "
+            f"(crash rate, D7 retention, support tickets) need more time to confirm sustained "
+            f"recovery. I agree with the PM that KI-001 should be the #1 gate."
+        ),
+        key_evidence=[
+            f"Crash rate trajectory: {peak_crash}% (Day 6) → {latest_crash}% (Day 10) — improving but {latest_crash}% > {criteria['max_crash_rate_pct']}%",
+            f"Latency: {latest_latency}ms — now within {criteria['max_p95_latency_ms']}ms target",
+            f"Payment success: {latest['payment_success_pct']}% — recovered above {criteria['min_payment_success_pct']}% threshold",
+            f"D7 retention: {latest_d7}% — still declining, need Day 3-4 cohort data (Days 10-11)",
+            f"Risk/Critic's point accepted: KI-001 is a qualitative risk not captured in my metrics",
+        ],
+        recommended_actions=[
+            "Hold at 25% rollout until crash rate < 0.75% for 3 consecutive days.",
+            "Elevate KI-001 fix to P0 gate — no expansion until fix is confirmed.",
+            "Set automated monitoring: all 9 metrics must be within thresholds for 48h before expansion.",
+            "Track D7 retention for Day 3-4 cohort maturing on Days 10-11.",
+        ],
+    )
 
-    # ── Synthesise ──────────────────────────────────────────────────────
-    # Tally: 4 Pause, 1 Roll Back → Pause wins
+    marketing_revised = AgentVerdict(
+        agent_name="Marketing & Comms",
+        role="marketing_comms",
+        decision=Decision.PAUSE,
+        confidence=0.62,
+        rationale=(
+            f"The Risk/Critic's emphasis on the Reddit data-loss PSA and its amplification "
+            f"potential has shifted my assessment. I underweighted the brand damage of a viral "
+            f"data-loss thread — it IS more damaging than performance complaints. However, I "
+            f"still favour Pause over Roll Back because: (1) rolling back generates its own "
+            f"negative narrative ('they had to pull the feature'), (2) the accessibility user "
+            f"(#35) represents a powerful positive story we'd lose, and (3) transparent "
+            f"acknowledgement of the issue can convert critics into advocates if we fix fast. "
+            f"My confidence has dropped from 70% to 62% — if KI-001 is not fixed within 48h, "
+            f"I would shift to Roll Back to protect the brand."
+        ),
+        key_evidence=[
+            f"Revised: Reddit data-loss PSA is higher risk than initially assessed — viral potential",
+            f"Rollback has its own brand cost: 'they had to pull the feature' narrative",
+            f"Accessibility user (#35) represents key positive narrative worth preserving",
+            f"Post-hotfix sentiment (Days 8-10) is trending positive — fragile but real",
+        ],
+        recommended_actions=[
+            "Issue transparent status update WITHIN 24h: acknowledge data-loss bug, performance issues, and opt-out gap.",
+            "Respond personally to Twitter auto-complete complaints with empathy and DM follow-up.",
+            "If KI-001 is not fixed in 48h, recommend shift to Roll Back to protect brand.",
+            "Prepare dual comms plans: (a) 'we paused and fixed it' and (b) 'we rolled back to protect you'.",
+            "Monitor Reddit thread on draft loss — if it trends, issue official response immediately.",
+        ],
+        dissent_notes=(
+            "If KI-001 is not fixed within 48h, I would shift my recommendation to Roll Back. "
+            "The brand cost of a prolonged data-loss exposure outweighs the brand cost of pulling "
+            "the feature and re-launching cleanly."
+        ),
+    )
+
+    revised_verdicts = [pm_revised, data_revised, marketing_revised]
+
+    # ════════════════════════════════════════════════════════════════════
+    #  PHASE 3 — Director / Senior PM synthesis
+    # ════════════════════════════════════════════════════════════════════
 
     outcome = WarRoomOutcome(
         final_decision=Decision.PAUSE,
         decision_rationale=(
-            "Four of five agents recommend Pause; one (Risk/Critic) recommends Roll Back. "
-            "The 10-day data shows a clear pattern: a significant degradation on Days 5-6, "
-            "followed by partial recovery after the Day 7 hotfix. By Day 10, crash rate "
-            f"({latest_crash}%) and latency ({latest_latency}ms) are trending toward thresholds "
-            f"but have not yet consistently met them. Three of nine metrics still breach success "
-            f"criteria. The critical draft-loss bug (KI-001) remains open and poses unacceptable "
-            f"data-integrity risk. Feature funnel completion ({latest['feature_funnel_completion_pct']}%) and "
-            f"funnel completion ({latest['feature_funnel_completion_pct']}%) are strong positive "
-            f"signals that argue against a full rollback. Pausing at 25% limits the blast radius "
-            f"to ~{dashboard['total_user_base'] * 25 // 100:,} users while preserving the ability "
-            f"to resume quickly. The pause is conditional on shipping the KI-001 fix and opt-out "
-            f"toggle before any further expansion."
+            "All three domain agents maintain Pause after deliberation, though with lower "
+            "confidence (PM: 72%→65%, Data: 82%→80%, Marketing: 70%→62%). The Risk/Critic "
+            "recommends Roll Back (68% confidence) citing KI-001 data-loss exposure. "
+            "The strongest argument against Pause is the Risk/Critic's point that ~130,000 users "
+            "remain exposed to a data-loss bug with no confirmed fix — this is a valid concern. "
+            "However, the agents' revised positions converge on a conditional Pause with a hard "
+            "48h gate on KI-001: if the fix is not shipped in 48h, the decision escalates to "
+            "Roll Back. This conditional approach preserves the 28.5% adoption signal and avoids "
+            "the brand cost of a full rollback, while setting a firm deadline that addresses the "
+            "Risk/Critic's core concern. The deliberation shifted all agents to treat KI-001 as "
+            "the #1 priority — above the opt-out toggle and expansion planning."
         ),
-        individual_verdicts=verdicts,
+        initial_verdicts=initial_verdicts,
+        critique=critique,
+        revised_verdicts=revised_verdicts,
         action_plan=[
             "IMMEDIATE: Freeze rollout at 25% — block scheduled expansion to 50%.",
-            "IMMEDIATE (P0): Assign 2 engineers to KI-001 (draft loss race condition); target fix within 48h.",
+            "IMMEDIATE (P0): Assign 2 engineers to KI-001 (draft loss race condition); hard 48h deadline.",
             "WITHIN 24h: Add server-side draft backup as defence-in-depth for data loss.",
+            "WITHIN 24h: Publish transparent status update across all channels (blog, in-app banner, social).",
             "WITHIN 48h: Ship KI-001 fix and verify with targeted regression tests.",
+            "ESCALATION GATE: If KI-001 is NOT fixed by 48h, reconvene war room to decide Roll Back.",
             "WITHIN 48h: Run inference API load test simulating 50% user traffic.",
             "WITHIN 4 DAYS: Ship user-facing opt-out toggle (KI-004, fast-tracked from v4.12.1).",
-            "WITHIN 24h: Publish transparent status update across all channels (blog, in-app banner, social).",
             "WITHIN 1 WEEK: Conduct blameless post-incident review of the Day 5-6 degradation.",
-            "GATE: Resume expansion to 50% ONLY when ALL of these are true for 72h: "
+            "RESUME GATE: Expand to 50% ONLY when ALL of these hold for 72h: "
             "crash_rate < 0.75%, p95_latency < 300ms, KI-001 fix confirmed, opt-out toggle live.",
         ],
         risks_and_mitigations=[
-            "Risk: KI-001 data loss affects more users during pause → Mitigation: Server-side draft backup within 24h + P0 fix in 48h.",
+            "Risk: KI-001 data loss affects more users during pause → Mitigation: Server-side draft backup within 24h + P0 fix in 48h + escalation to Roll Back if missed.",
             "Risk: Crash rate re-spikes when expanding past 25% → Mitigation: Load test at 50% before expansion; automated rollback trigger at 1.5%.",
-            "Risk: Negative sentiment compounds (Reddit PSA, app-store 1-stars) → Mitigation: Transparent comms + personal outreach to vocal critics.",
+            "Risk: Negative sentiment compounds (Reddit PSA, app-store 1-stars) → Mitigation: Transparent comms within 24h + personal outreach to vocal critics.",
             "Risk: D7 retention continues declining → Mitigation: Deep-dive analysis separating performance-churn from feature-churn; opt-out toggle unblocks users who don't want the feature.",
-            "Risk: Pause drags beyond 1 week, losing launch momentum → Mitigation: Clear 72h gate criteria with daily war-room check-ins.",
+            "Risk: Pause drags beyond 1 week, losing launch momentum → Mitigation: Hard 48h escalation gate on KI-001; clear 72h resume criteria with daily war-room check-ins.",
             "Risk: Payment success rate degrades again under load → Mitigation: Isolate payment service from inference API; independent scaling policy.",
         ],
         follow_up_monitoring=[
@@ -353,15 +463,18 @@ def _run_offline(dashboard: dict) -> WarRoomOutcome:
             "Payment success rate — target: ≥ 99.0%",
             "KI-001 recurrence — zero tolerance after fix deployment",
             "Churn/cancellations — target: ≤ 15/day (currently 31/day, baseline 10/day)",
-            "NPS and CSAT — daily tracking; resume gate requires CSAT ≥ 3.8",
             "Social media sentiment — daily scan; escalate if negative trend resumes",
         ],
         dissenting_opinions=[
-            "Risk/Critic (Roll Back, 68% confidence): KI-001 (draft data loss) is still in 'investigating' "
-            "status after 10 days and has been reported by 3 users with Reddit amplification. At 25% rollout, "
-            "~130,000 users are exposed to a data-loss bug with no confirmed fix. The recovery trend is only "
-            "3 days old and untested at higher scale. Pausing still leaves users in a degraded state — a full "
-            "rollback protects user trust while the team ships fixes and re-launches cleanly.",
+            "Risk/Critic (Roll Back, 68% confidence): KI-001 (draft data loss) is still in "
+            "'investigating' status after 10 days and has been reported by 3 users with Reddit "
+            "amplification. At 25% rollout, ~130,000 users are exposed to a data-loss bug with "
+            "no confirmed fix. The recovery trend is only 3 days old and untested at higher "
+            "scale. Pausing still leaves users in a degraded state — a full rollback protects "
+            "user trust while the team ships fixes and re-launches cleanly.",
+            "Marketing & Comms (conditional): If KI-001 is not fixed within 48h, would shift "
+            "recommendation to Roll Back. The brand cost of prolonged data-loss exposure "
+            "outweighs the brand cost of pulling the feature.",
         ],
     )
 
@@ -411,19 +524,9 @@ def main() -> None:
         payload = {
             "final_decision": outcome.final_decision.value,
             "decision_rationale": outcome.decision_rationale,
-            "individual_verdicts": [
-                {
-                    "agent": v.agent_name,
-                    "role": v.role,
-                    "decision": v.decision.value,
-                    "confidence": v.confidence,
-                    "rationale": v.rationale,
-                    "key_evidence": v.key_evidence,
-                    "recommended_actions": v.recommended_actions,
-                    "dissent_notes": v.dissent_notes,
-                }
-                for v in outcome.individual_verdicts
-            ],
+            "initial_verdicts": [_verdict_to_dict(v) for v in outcome.initial_verdicts],
+            "critique": _verdict_to_dict(outcome.critique),
+            "revised_verdicts": [_verdict_to_dict(v) for v in outcome.revised_verdicts],
             "action_plan": outcome.action_plan,
             "risks_and_mitigations": outcome.risks_and_mitigations,
             "follow_up_monitoring": outcome.follow_up_monitoring,
