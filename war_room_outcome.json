@@ -1,6 +1,308 @@
 {
   "final_decision": "Pause",
   "decision_rationale": "All three domain agents maintain Pause after deliberation, though with lower confidence (PM: 72%\u219265%, Data: 82%\u219280%, Marketing: 70%\u219262%). The Risk/Critic recommends Roll Back (68% confidence) citing KI-001 data-loss exposure. The strongest argument against Pause is the Risk/Critic's point that ~130,000 users remain exposed to a data-loss bug with no confirmed fix \u2014 this is a valid concern. However, the agents' revised positions converge on a conditional Pause with a hard 48h gate on KI-001: if the fix is not shipped in 48h, the decision escalates to Roll Back. This conditional approach preserves the 28.5% adoption signal and avoids the brand cost of a full rollback, while setting a firm deadline that addresses the Risk/Critic's core concern. The deliberation shifted all agents to treat KI-001 as the #1 priority \u2014 above the opt-out toggle and expansion planning.",
+  "tool_analysis": {
+    "aggregate_metrics": {
+      "metric_summaries": {
+        "crash_rate_pct": {
+          "latest": 0.95,
+          "min": 0.38,
+          "max": 2.4,
+          "mean": 1.15,
+          "trend": "worsening",
+          "threshold": 0.75,
+          "breached": true,
+          "baseline": 0.35,
+          "delta_from_baseline_pct": 171.4
+        },
+        "p95_latency_ms": {
+          "latest": 290,
+          "min": 205,
+          "max": 485,
+          "mean": 320.5,
+          "trend": "worsening",
+          "threshold": 300,
+          "breached": false,
+          "baseline": 195,
+          "delta_from_baseline_pct": 48.7
+        },
+        "signup_conversion_pct": {
+          "latest": 3.8,
+          "min": 3.3,
+          "max": 4.3,
+          "mean": 3.77,
+          "trend": "worsening",
+          "threshold": 3.8,
+          "breached": false,
+          "baseline": 4.4,
+          "delta_from_baseline_pct": -13.6
+        },
+        "retention_d1_pct": {
+          "latest": 68.0,
+          "min": 63.4,
+          "max": 72.0,
+          "mean": 67.73,
+          "trend": "worsening",
+          "threshold": 68.0,
+          "breached": false,
+          "baseline": 73.0,
+          "delta_from_baseline_pct": -6.8
+        },
+        "retention_d7_pct": {
+          "latest": 39.2,
+          "min": 39.2,
+          "max": 41.2,
+          "mean": 40.17,
+          "trend": "insufficient_data",
+          "threshold": 42.0,
+          "breached": true,
+          "baseline": 45.0,
+          "delta_from_baseline_pct": -12.9
+        },
+        "payment_success_pct": {
+          "latest": 99.2,
+          "min": 97.8,
+          "max": 99.6,
+          "mean": 98.94,
+          "trend": "worsening",
+          "threshold": 99.0,
+          "breached": false,
+          "baseline": 99.7,
+          "delta_from_baseline_pct": -0.5
+        },
+        "support_tickets": {
+          "latest": 155,
+          "min": 42,
+          "max": 289,
+          "mean": 160.9,
+          "trend": "worsening",
+          "threshold": 80,
+          "breached": true,
+          "baseline": 38,
+          "delta_from_baseline_pct": 307.9
+        },
+        "feature_funnel_completion_pct": {
+          "latest": 28.5,
+          "min": 18.0,
+          "max": 28.5,
+          "mean": 23.98,
+          "trend": "improving",
+          "threshold": 20.0,
+          "breached": false,
+          "baseline": null,
+          "delta_from_baseline_pct": null
+        },
+        "churn_cancellations": {
+          "latest": 31,
+          "min": 12,
+          "max": 58,
+          "mean": 33.5,
+          "trend": "worsening",
+          "threshold": null,
+          "breached": false,
+          "baseline": 10,
+          "delta_from_baseline_pct": 210.0
+        }
+      },
+      "total_metrics": 9,
+      "breaching_count": 3,
+      "overall_health": "critical"
+    },
+    "detect_anomalies": {
+      "anomalies": [
+        {
+          "metric": "payment_success_pct",
+          "day": 6,
+          "value": 97.8,
+          "mean": 98.94,
+          "std_dev": 0.52,
+          "z_score": 2.2,
+          "direction": "drop",
+          "severity": "medium"
+        },
+        {
+          "metric": "crash_rate_pct",
+          "day": 6,
+          "value": 2.4,
+          "mean": 1.15,
+          "std_dev": 0.61,
+          "z_score": 2.05,
+          "direction": "spike",
+          "severity": "medium"
+        }
+      ],
+      "total_anomalies": 2
+    },
+    "summarize_sentiment": {
+      "total_feedback": 35,
+      "sentiment_breakdown": {
+        "positive": 10,
+        "negative": 18,
+        "neutral": 7,
+        "mixed": 0
+      },
+      "by_channel": {
+        "unknown": {
+          "positive": 10,
+          "negative": 18,
+          "neutral": 7,
+          "mixed": 0,
+          "total": 35
+        }
+      },
+      "top_themes": {},
+      "sentiment_timeline": {
+        "1": {
+          "positive": 1,
+          "negative": 0,
+          "neutral": 0,
+          "mixed": 0
+        },
+        "2": {
+          "positive": 1,
+          "negative": 1,
+          "neutral": 0,
+          "mixed": 0
+        },
+        "3": {
+          "positive": 1,
+          "negative": 1,
+          "neutral": 1,
+          "mixed": 0
+        },
+        "4": {
+          "positive": 0,
+          "negative": 3,
+          "neutral": 0,
+          "mixed": 0
+        },
+        "5": {
+          "positive": 1,
+          "negative": 5,
+          "neutral": 1,
+          "mixed": 0
+        },
+        "6": {
+          "positive": 1,
+          "negative": 5,
+          "neutral": 0,
+          "mixed": 0
+        },
+        "7": {
+          "positive": 1,
+          "negative": 1,
+          "neutral": 2,
+          "mixed": 0
+        },
+        "8": {
+          "positive": 2,
+          "negative": 0,
+          "neutral": 1,
+          "mixed": 0
+        },
+        "9": {
+          "positive": 2,
+          "negative": 1,
+          "neutral": 0,
+          "mixed": 0
+        },
+        "10": {
+          "positive": 0,
+          "negative": 1,
+          "neutral": 2,
+          "mixed": 0
+        }
+      },
+      "high_impact_items": [],
+      "net_sentiment_score": -0.23
+    },
+    "compare_trends": {
+      "comparisons": [
+        {
+          "metric": "crash_rate_pct",
+          "latest": 0.95,
+          "baseline": 0.35,
+          "delta": 0.6,
+          "delta_pct": 171.4,
+          "direction": "improving",
+          "velocity_per_3d": -0.82,
+          "projected_days_to_baseline": 2.2
+        },
+        {
+          "metric": "p95_latency_ms",
+          "latest": 290,
+          "baseline": 195,
+          "delta": 95,
+          "delta_pct": 48.7,
+          "direction": "improving",
+          "velocity_per_3d": -113.33,
+          "projected_days_to_baseline": 2.5
+        },
+        {
+          "metric": "signup_conversion_pct",
+          "latest": 3.8,
+          "baseline": 4.4,
+          "delta": -0.6,
+          "delta_pct": -13.6,
+          "direction": "improving",
+          "velocity_per_3d": 0.27,
+          "projected_days_to_baseline": 6.7
+        },
+        {
+          "metric": "retention_d1_pct",
+          "latest": 68.0,
+          "baseline": 73.0,
+          "delta": -5.0,
+          "delta_pct": -6.8,
+          "direction": "improving",
+          "velocity_per_3d": 2.93,
+          "projected_days_to_baseline": 5.1
+        },
+        {
+          "metric": "retention_d7_pct",
+          "latest": 39.2,
+          "baseline": 45.0,
+          "delta": -5.8,
+          "delta_pct": -12.9,
+          "direction": "stable",
+          "velocity_per_3d": 0.0,
+          "projected_days_to_baseline": null
+        },
+        {
+          "metric": "payment_success_pct",
+          "latest": 99.2,
+          "baseline": 99.7,
+          "delta": -0.5,
+          "delta_pct": -0.5,
+          "direction": "improving",
+          "velocity_per_3d": 0.77,
+          "projected_days_to_baseline": 1.9
+        },
+        {
+          "metric": "support_tickets",
+          "latest": 155,
+          "baseline": 38,
+          "delta": 117,
+          "delta_pct": 307.9,
+          "direction": "improving",
+          "velocity_per_3d": -34.0,
+          "projected_days_to_baseline": 10.3
+        },
+        {
+          "metric": "churn_cancellations",
+          "latest": 31,
+          "baseline": 10,
+          "delta": 21,
+          "delta_pct": 210.0,
+          "direction": "improving",
+          "velocity_per_3d": -7.0,
+          "projected_days_to_baseline": 9.0
+        }
+      ],
+      "improving_count": 7,
+      "worsening_count": 0
+    }
+  },
   "initial_verdicts": [
     {
       "agent": "Product Manager",

@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from openai import OpenAI
 
 from .models import AgentVerdict, Decision
+from .tools import TOOL_REGISTRY
 
 # ── Shared JSON extraction helper ───────────────────────────────────────────
 
@@ -71,30 +72,77 @@ class BaseAgent:
     name: str = "BaseAgent"
     role: str = "base"
     system_prompt: str = ""
+    tools: list[str] = []   # tool names from TOOL_REGISTRY
 
     def __init__(self, client: OpenAI, model: str = "gpt-4o"):
         self.client = client
         self.model = model
+        self.last_tool_results: dict[str, Any] = {}  # filled by _invoke_tools
+
+    # ── Tool invocation machinery ───────────────────────────────────────
+
+    def _invoke_tools(self, dashboard: dict) -> dict[str, Any]:
+        """Programmatically call every tool listed in ``self.tools``.
+
+        Returns a dict mapping tool name → structured result.
+        Also stores results in ``self.last_tool_results`` so the
+        orchestrator can log which tools were invoked.
+        """
+        results: dict[str, Any] = {}
+        for tool_name in self.tools:
+            entry = TOOL_REGISTRY[tool_name]
+            results[tool_name] = entry["fn"](dashboard)
+        self.last_tool_results = results
+        return results
+
+    @staticmethod
+    def _format_tool_outputs(tool_results: dict[str, Any]) -> str:
+        """Render tool outputs as labelled JSON blocks for the LLM prompt."""
+        if not tool_results:
+            return ""
+        sections = []
+        for name, data in tool_results.items():
+            desc = TOOL_REGISTRY[name]["description"]
+            sections.append(
+                f"### Tool: {name}\n{desc}\n"
+                f"```json\n{json.dumps(data, indent=2)}\n```"
+            )
+        return "\n\n".join(sections)
 
     # ── Phase 1: independent analysis ───────────────────────────────────
 
-    def _build_user_message(self, dashboard: dict) -> str:
-        return (
+    def _build_user_message(self, dashboard: dict, tool_outputs: str = "") -> str:
+        parts = [
             "Here is the current launch dashboard data (10-day daily metrics, "
             "baseline comparisons, aggregate KPIs, 35 user feedback entries, "
             "success criteria, release notes, and known issues):\n\n"
-            f"```json\n{json.dumps(dashboard, indent=2)}\n```\n\n"
-            f"Produce your verdict as a JSON object with this exact schema:\n{_VERDICT_SCHEMA}"
+            f"```json\n{json.dumps(dashboard, indent=2)}\n```",
+        ]
+        if tool_outputs:
+            parts.append(
+                "\n\nBelow are pre-computed analysis results from the tools "
+                "you invoked.  Use these as the primary basis for your "
+                "assessment — they contain aggregated stats, anomalies, "
+                "sentiment breakdowns, and/or trend comparisons that have "
+                "already been computed from the raw data above.\n\n"
+                + tool_outputs
+            )
+        parts.append(
+            f"\n\nProduce your verdict as a JSON object with this exact schema:\n{_VERDICT_SCHEMA}"
         )
+        return "\n".join(parts)
 
     def analyze(self, dashboard: dict) -> AgentVerdict:
-        """Phase 1: Call the LLM and return a structured AgentVerdict."""
+        """Phase 1: Invoke tools, then call the LLM with enriched context."""
+        tool_results = self._invoke_tools(dashboard)
+        tool_text = self._format_tool_outputs(tool_results)
+
         response = self.client.chat.completions.create(
             model=self.model,
             temperature=0.3,
             messages=[
                 {"role": "system", "content": self.system_prompt},
-                {"role": "user", "content": self._build_user_message(dashboard)},
+                {"role": "user", "content": self._build_user_message(dashboard, tool_text)},
             ],
         )
         raw = response.choices[0].message.content
@@ -157,6 +205,7 @@ class BaseAgent:
 class ProductManagerAgent(BaseAgent):
     name = "Product Manager"
     role = "pm"
+    tools = ["aggregate_metrics", "compare_trends"]
     system_prompt = textwrap.dedent("""\
         You are the Product Manager in a product-launch war room.
         Your responsibilities:
@@ -177,6 +226,7 @@ class ProductManagerAgent(BaseAgent):
 class DataAnalystAgent(BaseAgent):
     name = "Data Analyst"
     role = "data_analyst"
+    tools = ["aggregate_metrics", "detect_anomalies"]
     system_prompt = textwrap.dedent("""\
         You are the Data Analyst in a product-launch war room.
         Your responsibilities:
@@ -200,6 +250,7 @@ class DataAnalystAgent(BaseAgent):
 class MarketingCommsAgent(BaseAgent):
     name = "Marketing & Comms"
     role = "marketing_comms"
+    tools = ["summarize_sentiment"]
     system_prompt = textwrap.dedent("""\
         You are the Marketing & Communications lead in a product-launch war room.
         Your responsibilities:
@@ -225,6 +276,7 @@ class MarketingCommsAgent(BaseAgent):
 class RiskCriticAgent(BaseAgent):
     name = "Risk / Critic"
     role = "risk_critic"
+    tools = ["detect_anomalies", "aggregate_metrics"]
     system_prompt = textwrap.dedent("""\
         You are the Risk Analyst and Devil's Advocate in a product-launch war room.
         Your responsibilities:
@@ -243,8 +295,19 @@ class RiskCriticAgent(BaseAgent):
     """)
 
     def challenge(self, dashboard: dict, verdicts: list[AgentVerdict]) -> AgentVerdict:
-        """Phase 2a: Review all Phase 1 verdicts and produce a challenge verdict."""
+        """Phase 2a: Invoke tools, then review all Phase 1 verdicts critically."""
+        tool_results = self._invoke_tools(dashboard)
+        tool_text = self._format_tool_outputs(tool_results)
+
         verdicts_summary = format_verdicts_summary(verdicts)
+
+        tool_section = ""
+        if tool_text:
+            tool_section = (
+                "\n\n## Pre-Computed Analysis (from your tools)\n"
+                "Use these results to ground your critique in hard data.\n\n"
+                + tool_text
+            )
 
         prompt = textwrap.dedent(f"""\
             All domain agents have submitted their independent verdicts for the
@@ -257,6 +320,7 @@ class RiskCriticAgent(BaseAgent):
             ```json
             {json.dumps(dashboard, indent=2)}
             ```
+            {tool_section}
 
             Your job:
             1. Challenge the assumptions and reasoning of each agent.

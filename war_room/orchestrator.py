@@ -35,10 +35,17 @@ class WarRoom:
 
     # ── Phase 1: Independent analysis ───────────────────────────────────
 
-    def _phase1_analyze(self, dashboard: dict) -> list[AgentVerdict]:
-        """Run PM, Data Analyst, Marketing/Comms in parallel."""
+    def _phase1_analyze(
+        self, dashboard: dict,
+    ) -> tuple[list[AgentVerdict], list[BaseAgent]]:
+        """Run PM, Data Analyst, Marketing/Comms in parallel.
+
+        Returns the verdicts **and** agent instances (so the caller
+        can inspect ``agent.last_tool_results``).
+        """
         agents = [cls(self.client, self.model) for cls in PHASE1_AGENTS]
         verdicts: list[AgentVerdict] = []
+        agent_map: list[BaseAgent] = []
 
         with ThreadPoolExecutor(max_workers=self.max_parallel) as pool:
             futures = {pool.submit(agent.analyze, dashboard): agent for agent in agents}
@@ -47,17 +54,23 @@ class WarRoom:
                 try:
                     verdict = future.result()
                     verdicts.append(verdict)
+                    agent_map.append(agent)
                 except Exception as exc:
                     print(f"  ⚠  {agent.name} failed: {exc}")
 
-        return verdicts
+        return verdicts, agent_map
 
     # ── Phase 2a: Risk/Critic challenge ─────────────────────────────────
 
-    def _phase2a_critique(self, dashboard: dict, verdicts: list[AgentVerdict]) -> AgentVerdict:
-        """Risk/Critic reviews all Phase 1 verdicts and produces a challenge."""
+    def _phase2a_critique(
+        self, dashboard: dict, verdicts: list[AgentVerdict],
+    ) -> tuple[AgentVerdict, RiskCriticAgent]:
+        """Risk/Critic reviews all Phase 1 verdicts and produces a challenge.
+
+        Returns the critique verdict **and** the agent instance.
+        """
         critic = RiskCriticAgent(self.client, self.model)
-        return critic.challenge(dashboard, verdicts)
+        return critic.challenge(dashboard, verdicts), critic
 
     # ── Phase 2b: Agent revision ────────────────────────────────────────
 
@@ -193,6 +206,14 @@ class WarRoom:
 
     # ── Public API ──────────────────────────────────────────────────────
 
+    @staticmethod
+    def _log_tools(agents: list[BaseAgent]) -> None:
+        """Print which tools each agent invoked (verbose helper)."""
+        for agent in agents:
+            if agent.last_tool_results:
+                tool_names = ", ".join(agent.last_tool_results.keys())
+                print(f"    🔧 {agent.name} invoked: {tool_names}")
+
     def run(self, dashboard: dict, verbose: bool = True) -> WarRoomOutcome:
         """Execute the full 3-phase war-room session and return the outcome."""
         if verbose:
@@ -209,8 +230,9 @@ class WarRoom:
             print("─" * 60)
             print("  Phase 1 — Independent Agent Analysis")
             print("─" * 60)
-        initial_verdicts = self._phase1_analyze(dashboard)
+        initial_verdicts, p1_agents = self._phase1_analyze(dashboard)
         if verbose:
+            self._log_tools(p1_agents)
             for v in initial_verdicts:
                 print(f"\n  [{v.agent_name}]  →  {v.decision.value}  "
                       f"(confidence: {v.confidence:.0%})")
@@ -221,8 +243,9 @@ class WarRoom:
             print(f"\n{'─' * 60}")
             print("  Phase 2a — Risk/Critic Challenge")
             print("─" * 60)
-        critique = self._phase2a_critique(dashboard, initial_verdicts)
+        critique, critic_agent = self._phase2a_critique(dashboard, initial_verdicts)
         if verbose:
+            self._log_tools([critic_agent])
             print(f"\n  [Risk / Critic]  →  {critique.decision.value}  "
                   f"(confidence: {critique.confidence:.0%})")
             print(f"    Rationale: {critique.rationale[:200]}...")

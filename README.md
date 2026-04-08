@@ -67,6 +67,19 @@ with a concrete action plan.
    the Risk/Critic's challenge, and the revised verdicts.  They make the final
    go/no-go call with an action plan, risk mitigations, and monitoring gates.
 
+### Agent Tools
+
+Agents invoke programmatic tools **before** calling the LLM.  Tool outputs
+(aggregated stats, anomalies, sentiment breakdowns, trend comparisons) are
+injected into the prompt so the model reasons over processed data, not raw JSON.
+
+| Tool | Called by | Description |
+|---|---|---|
+| `aggregate_metrics` | PM, Data Analyst, Risk/Critic | Per-metric stats (min/max/mean/latest), trend direction, threshold breach flags, overall health score |
+| `detect_anomalies` | Data Analyst, Risk/Critic | Z-score anomaly detection across all daily metric time-series — returns spikes/drops with severity |
+| `summarize_sentiment` | Marketing & Comms | Channel/theme/timeline breakdown of user feedback with high-impact item detection |
+| `compare_trends` | PM | Baseline deltas, 3-day velocity, direction (improving/worsening/stable), linear recovery ETA |
+
 ## Mock Scenario
 
 **Feature:** Smart Compose 2.0 — AI-powered email completion  
@@ -111,6 +124,7 @@ python main.py --offline --json
     ├── mock_dashboard.py      # Mock metrics, KPIs, user feedback, success criteria
     ├── models.py              # AgentVerdict, WarRoomOutcome, Decision enum
     ├── agents.py              # 4 agent classes (PM, Data, Marketing, Risk/Critic)
+    ├── tools.py               # 4 programmatic tools (aggregate, anomaly, sentiment, trends)
     └── orchestrator.py        # 3-phase war-room orchestration with feedback loop
 ```
 
