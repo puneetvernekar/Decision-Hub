@@ -1,0 +1,7 @@
+/.vscode
+venv
+.env
+__pycache__/
+*.pyc
+war_room_outcome.json
+*.log
