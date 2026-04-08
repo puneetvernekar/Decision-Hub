@@ -1,6 +1,16 @@
 {
   "final_decision": "Pause",
-  "decision_rationale": "All three domain agents maintain Pause after deliberation, though with lower confidence (PM: 72%\u219265%, Data: 82%\u219280%, Marketing: 70%\u219262%). The Risk/Critic recommends Roll Back (68% confidence) citing KI-001 data-loss exposure. The strongest argument against Pause is the Risk/Critic's point that ~130,000 users remain exposed to a data-loss bug with no confirmed fix \u2014 this is a valid concern. However, the agents' revised positions converge on a conditional Pause with a hard 48h gate on KI-001: if the fix is not shipped in 48h, the decision escalates to Roll Back. This conditional approach preserves the 28.5% adoption signal and avoids the brand cost of a full rollback, while setting a firm deadline that addresses the Risk/Critic's core concern. The deliberation shifted all agents to treat KI-001 as the #1 priority \u2014 above the opt-out toggle and expansion planning.",
+  "decision_rationale": "All three domain agents maintain Pause after deliberation, though with lower confidence (PM: 72%\u219265%, Data: 82%\u219280%, Marketing: 70%\u219262%). The Risk/Critic recommends Roll Back (68% confidence) citing KI-001 data-loss exposure. Key metric drivers: crash rate at 0.95% still breaches the 0.75% threshold, D7 retention at 39.2% is below the 42% target (-12.9% vs baseline), and support tickets at 85/day exceed the 80/day cap. Sentiment analysis shows 18 negative vs 10 positive feedback entries (net score: -0.23) with 'data_loss', 'performance/latency', and 'opt_out' as the top recurring themes. The strongest argument against Pause is the Risk/Critic's point that ~130,000 users remain exposed to a data-loss bug with no confirmed fix \u2014 this is a valid concern. However, the agents' revised positions converge on a conditional Pause with a hard 48h gate on KI-001: if the fix is not shipped in 48h, the decision escalates to Roll Back. This conditional approach preserves the 28.5% adoption signal and avoids the brand cost of a full rollback, while setting a firm deadline that addresses the Risk/Critic's core concern.",
+  "confidence_score": 0.69,
+  "confidence_drivers": [
+    "Would INCREASE confidence (+0.15): KI-001 fix confirmed and deployed with zero recurrence for 48h",
+    "Would INCREASE confidence (+0.10): Crash rate drops below 0.75% for 72 consecutive hours",
+    "Would INCREASE confidence (+0.08): D7 retention stabilises \u2265 42% for the Day 3-4 cohort",
+    "Would INCREASE confidence (+0.05): Opt-out toggle shipped \u2014 removes persistent user friction",
+    "Would DECREASE confidence (-0.20): Second data-loss report during pause window",
+    "Would DECREASE confidence (-0.15): Crash rate re-spikes above 1.5% (regression)",
+    "Would DECREASE confidence (-0.10): Reddit data-loss thread goes viral (>500 upvotes)"
+  ],
   "tool_analysis": {
     "aggregate_metrics": {
       "metric_summaries": {
@@ -459,25 +469,110 @@
     }
   ],
   "action_plan": [
-    "IMMEDIATE: Freeze rollout at 25% \u2014 block scheduled expansion to 50%.",
-    "IMMEDIATE (P0): Assign 2 engineers to KI-001 (draft loss race condition); hard 48h deadline.",
-    "WITHIN 24h: Add server-side draft backup as defence-in-depth for data loss.",
-    "WITHIN 24h: Publish transparent status update across all channels (blog, in-app banner, social).",
-    "WITHIN 48h: Ship KI-001 fix and verify with targeted regression tests.",
-    "ESCALATION GATE: If KI-001 is NOT fixed by 48h, reconvene war room to decide Roll Back.",
-    "WITHIN 48h: Run inference API load test simulating 50% user traffic.",
-    "WITHIN 4 DAYS: Ship user-facing opt-out toggle (KI-004, fast-tracked from v4.12.1).",
-    "WITHIN 1 WEEK: Conduct blameless post-incident review of the Day 5-6 degradation.",
-    "RESUME GATE: Expand to 50% ONLY when ALL of these hold for 72h: crash_rate < 0.75%, p95_latency < 300ms, KI-001 fix confirmed, opt-out toggle live."
+    {
+      "action": "Freeze rollout at 25% \u2014 block scheduled expansion to 50%",
+      "owner": "Engineering",
+      "timeframe": "IMMEDIATE"
+    },
+    {
+      "action": "Assign 2 engineers to KI-001 (draft loss race condition); hard 48h deadline",
+      "owner": "Engineering",
+      "timeframe": "IMMEDIATE"
+    },
+    {
+      "action": "Add server-side draft backup as defence-in-depth for data loss",
+      "owner": "Engineering",
+      "timeframe": "WITHIN 24h"
+    },
+    {
+      "action": "Publish transparent status update across all channels (blog, in-app banner, social)",
+      "owner": "Marketing",
+      "timeframe": "WITHIN 24h"
+    },
+    {
+      "action": "Ship KI-001 fix and verify with targeted regression tests",
+      "owner": "Engineering",
+      "timeframe": "WITHIN 48h"
+    },
+    {
+      "action": "If KI-001 is NOT fixed by 48h, reconvene war room to decide Roll Back",
+      "owner": "Leadership",
+      "timeframe": "ESCALATION GATE"
+    },
+    {
+      "action": "Run inference API load test simulating 50% user traffic",
+      "owner": "Engineering",
+      "timeframe": "WITHIN 48h"
+    },
+    {
+      "action": "Ship user-facing opt-out toggle (KI-004, fast-tracked from v4.12.1)",
+      "owner": "Engineering",
+      "timeframe": "WITHIN 4 DAYS"
+    },
+    {
+      "action": "Conduct blameless post-incident review of the Day 5-6 degradation",
+      "owner": "Engineering",
+      "timeframe": "WITHIN 1 WEEK"
+    },
+    {
+      "action": "Expand to 50% ONLY when ALL gates pass for 72h: crash_rate < 0.75%, p95_latency < 300ms, KI-001 fix confirmed, opt-out toggle live",
+      "owner": "PM",
+      "timeframe": "RESUME GATE"
+    }
   ],
   "risks_and_mitigations": [
-    "Risk: KI-001 data loss affects more users during pause \u2192 Mitigation: Server-side draft backup within 24h + P0 fix in 48h + escalation to Roll Back if missed.",
-    "Risk: Crash rate re-spikes when expanding past 25% \u2192 Mitigation: Load test at 50% before expansion; automated rollback trigger at 1.5%.",
-    "Risk: Negative sentiment compounds (Reddit PSA, app-store 1-stars) \u2192 Mitigation: Transparent comms within 24h + personal outreach to vocal critics.",
-    "Risk: D7 retention continues declining \u2192 Mitigation: Deep-dive analysis separating performance-churn from feature-churn; opt-out toggle unblocks users who don't want the feature.",
-    "Risk: Pause drags beyond 1 week, losing launch momentum \u2192 Mitigation: Hard 48h escalation gate on KI-001; clear 72h resume criteria with daily war-room check-ins.",
-    "Risk: Payment success rate degrades again under load \u2192 Mitigation: Isolate payment service from inference API; independent scaling policy."
+    {
+      "risk": "KI-001 data loss affects more users during pause",
+      "likelihood": "medium",
+      "impact": "high",
+      "mitigation": "Server-side draft backup within 24h + P0 fix in 48h + escalation to Roll Back if missed"
+    },
+    {
+      "risk": "Crash rate re-spikes when expanding past 25%",
+      "likelihood": "medium",
+      "impact": "high",
+      "mitigation": "Load test at 50% before expansion; automated rollback trigger at 1.5%"
+    },
+    {
+      "risk": "Negative sentiment compounds (Reddit PSA, app-store 1-stars)",
+      "likelihood": "medium",
+      "impact": "medium",
+      "mitigation": "Transparent comms within 24h + personal outreach to vocal critics"
+    },
+    {
+      "risk": "D7 retention continues declining",
+      "likelihood": "medium",
+      "impact": "medium",
+      "mitigation": "Deep-dive separating performance-churn from feature-churn; opt-out toggle unblocks users"
+    },
+    {
+      "risk": "Pause drags beyond 1 week, losing launch momentum",
+      "likelihood": "low",
+      "impact": "medium",
+      "mitigation": "Hard 48h escalation gate on KI-001; clear 72h resume criteria with daily war-room check-ins"
+    },
+    {
+      "risk": "Payment success rate degrades again under load",
+      "likelihood": "low",
+      "impact": "high",
+      "mitigation": "Isolate payment service from inference API; independent scaling policy"
+    }
   ],
+  "communication_plan": {
+    "internal": [
+      "Engineering all-hands (IMMEDIATE): Freeze rollout at 25%. KI-001 is P0 \u2014 2 engineers assigned, 48h hard deadline. Daily standups with war-room leads until resolved.",
+      "Leadership briefing (WITHIN 4h): Conditional Pause decision with 48h escalation gate. If KI-001 not fixed, next decision point is Roll Back. Board-level talking points prepared.",
+      "Support team (WITHIN 4h): Updated FAQ and canned responses for data-loss, performance, and opt-out complaints. Escalation path for KI-001 reports \u2192 engineering on-call.",
+      "Product/Design (WITHIN 24h): Opt-out toggle fast-tracked to 4-day delivery. UX review of draft-loss error state and recovery flow."
+    ],
+    "external": [
+      "Blog post (WITHIN 24h): 'Smart Compose 2.0 \u2014 what we've learned in 10 days'. Acknowledge performance issues, draft-loss bug, and missing opt-out. Commit to timeline.",
+      "In-app banner (WITHIN 24h): 'We're aware of issues with Smart Compose and are actively fixing them. An opt-out toggle is coming this week.'",
+      "Twitter/social (WITHIN 12h): Respond personally to auto-complete complaints with empathy. DM follow-up for users who reported data loss.",
+      "Reddit (MONITORING): If the draft-loss PSA thread exceeds 200 upvotes, post official response from product team with fix timeline and interim workaround.",
+      "App store (WITHIN 48h): Developer response to 1-star reviews acknowledging issues and pointing to the status blog post."
+    ]
+  },
   "follow_up_monitoring": [
     "Crash rate \u2014 target: < 0.75% for 72 consecutive hours",
     "P95 latency \u2014 target: < 300ms for 72 consecutive hours",

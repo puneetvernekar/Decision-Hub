@@ -132,9 +132,22 @@ class WarRoom:
         schema = textwrap.dedent("""\
         {
           "final_decision": "Proceed | Pause | Roll Back",
-          "decision_rationale": "...",
-          "action_plan": ["step 1", "step 2", ...],
-          "risks_and_mitigations": ["risk → mitigation", ...],
+          "decision_rationale": "... (reference specific metrics and feedback)",
+          "confidence_score": 0.0-1.0,
+          "confidence_drivers": [
+            "What would INCREASE confidence: ...",
+            "What would DECREASE confidence: ..."
+          ],
+          "action_plan": [
+            {"action": "...", "owner": "Engineering | PM | Marketing | Support | Leadership", "timeframe": "IMMEDIATE | WITHIN 24h | WITHIN 48h | ..."}
+          ],
+          "risks_and_mitigations": [
+            {"risk": "...", "likelihood": "high|medium|low", "impact": "high|medium|low", "mitigation": "..."}
+          ],
+          "communication_plan": {
+            "internal": ["message / action for internal stakeholders", ...],
+            "external": ["message / action for users / public", ...]
+          },
           "follow_up_monitoring": ["metric to watch", ...],
           "dissenting_opinions": ["...", ...]
         }""")
@@ -164,7 +177,16 @@ class WarRoom:
             • Before deciding, identify the strongest argument AGAINST the
               majority position and explain why it does or doesn't change
               your conclusion.
-            • The action plan must be concrete, sequenced, and assignable.
+            • The decision_rationale MUST reference specific metric values
+              and feedback themes that drove the decision.
+            • confidence_score: your overall confidence in the decision (0–1).
+            • confidence_drivers: list what evidence would raise or lower
+              your confidence (e.g., "KI-001 fix confirmed → +0.15").
+            • Each action_plan item must have action, owner, and timeframe.
+            • risks_and_mitigations: structured as objects with risk,
+              likelihood, impact, and mitigation.
+            • communication_plan: separate internal (engineering, leadership,
+              support) and external (users, press, social) messaging guidance.
             • Capture any dissenting opinions faithfully.
 
             Respond ONLY with a JSON object matching this schema:
@@ -195,11 +217,14 @@ class WarRoom:
         return WarRoomOutcome(
             final_decision=Decision(payload["final_decision"]),
             decision_rationale=payload["decision_rationale"],
+            confidence_score=float(payload.get("confidence_score", 0.5)),
+            confidence_drivers=payload.get("confidence_drivers", []),
             initial_verdicts=initial_verdicts,
             critique=critique,
             revised_verdicts=revised_verdicts,
             action_plan=payload["action_plan"],
             risks_and_mitigations=payload["risks_and_mitigations"],
+            communication_plan=payload.get("communication_plan", {"internal": [], "external": []}),
             follow_up_monitoring=payload["follow_up_monitoring"],
             dissenting_opinions=payload.get("dissenting_opinions", []),
         )
