@@ -1,7 +1,5 @@
 """Data models used across the war-room system."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional

@@ -1,11 +1,4 @@
 """
-Programmatic tools that agents invoke before calling the LLM.
-
-Each tool accepts the full dashboard dict and returns a structured result.
-Agents specify which tools they need via their ``tools`` class attribute;
-the base-agent machinery calls them automatically and injects the output
-into the LLM prompt so the model works from *processed* data rather than
-raw JSON.
 
 Tool registry
 ─────────────
