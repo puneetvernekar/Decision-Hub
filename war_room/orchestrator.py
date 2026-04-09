@@ -9,10 +9,6 @@ Phase 3 — Director / Senior PM synthesises the final go/no-go decision
 import json
 import textwrap
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from openai import OpenAI
 
 from .agents import (
     PHASE1_AGENTS, RiskCriticAgent, BaseAgent,
@@ -25,21 +21,14 @@ from .trace import trace, reset_trace, get_trace
 class WarRoom:
     """Orchestrates the multi-agent war-room session."""
 
-    def __init__(
-        self,
-        client: OpenAI,
-        model: str = "gpt-4o",
-        max_parallel: int = 3,
-    ):
+    def __init__(self, client, model="gpt-4o", max_parallel=3):
         self.client = client
         self.model = model
         self.max_parallel = max_parallel
 
     # ── Phase 1: Independent analysis ───────────────────────────────────
 
-    def _phase1_analyze(
-        self, dashboard: dict,
-    ) -> tuple[list[AgentVerdict], list[BaseAgent]]:
+    def _phase1_analyze(self, dashboard):
         """Run PM, Data Analyst, Marketing/Comms.
 
         Uses parallel execution when max_parallel > 1, otherwise runs
@@ -49,8 +38,8 @@ class WarRoom:
         can inspect ``agent.last_tool_results``).
         """
         agents = [cls(self.client, self.model) for cls in PHASE1_AGENTS]
-        verdicts: list[AgentVerdict] = []
-        agent_map: list[BaseAgent] = []
+        verdicts = []
+        agent_map = []
 
         if self.max_parallel <= 1:
             # Sequential — avoids rate-limit collisions on free tiers
@@ -77,9 +66,7 @@ class WarRoom:
 
     # ── Phase 2a: Risk/Critic challenge ─────────────────────────────────
 
-    def _phase2a_critique(
-        self, dashboard: dict, verdicts: list[AgentVerdict],
-    ) -> tuple[AgentVerdict, RiskCriticAgent]:
+    def _phase2a_critique(self, dashboard, verdicts):
         """Risk/Critic reviews all Phase 1 verdicts and produces a challenge.
 
         Returns the critique verdict **and** the agent instance.
@@ -89,18 +76,13 @@ class WarRoom:
 
     # ── Phase 2b: Agent revision ────────────────────────────────────────
 
-    def _phase2b_revise(
-        self,
-        dashboard: dict,
-        initial_verdicts: list[AgentVerdict],
-        critique: AgentVerdict,
-    ) -> list[AgentVerdict]:
+    def _phase2b_revise(self, dashboard, initial_verdicts, critique):
         """Each Phase 1 agent revises after seeing peers + critique.
 
         Sequential when max_parallel <= 1, parallel otherwise.
         """
         agents = [cls(self.client, self.model) for cls in PHASE1_AGENTS]
-        revised: list[AgentVerdict] = []
+        revised = []
 
         if self.max_parallel <= 1:
             for agent in agents:
@@ -133,12 +115,7 @@ class WarRoom:
 
     # ── Phase 3: Director / Senior PM synthesis ─────────────────────────
 
-    def _phase3_synthesize(
-        self,
-        initial_verdicts: list[AgentVerdict],
-        critique: AgentVerdict,
-        revised_verdicts: list[AgentVerdict],
-    ) -> WarRoomOutcome:
+    def _phase3_synthesize(self, initial_verdicts, critique, revised_verdicts):
         """Director / Senior PM makes the final go/no-go decision."""
 
         initial_summary = format_verdicts_summary(initial_verdicts)
@@ -261,14 +238,14 @@ class WarRoom:
     # ── Public API ──────────────────────────────────────────────────────
 
     @staticmethod
-    def _log_tools(agents: list[BaseAgent]) -> None:
+    def _log_tools(agents):
         """Print which tools each agent invoked (verbose helper)."""
         for agent in agents:
             if agent.last_tool_results:
                 tool_names = ", ".join(agent.last_tool_results.keys())
                 print(f"    🔧 {agent.name} invoked: {tool_names}")
 
-    def run(self, dashboard: dict, verbose: bool = True) -> WarRoomOutcome:
+    def run(self, dashboard, verbose=True):
         """Execute the full 3-phase war-room session and return the outcome."""
         reset_trace()
         trace("orchestrator", "session", "War-room session started")
