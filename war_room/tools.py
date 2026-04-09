@@ -1,103 +1,85 @@
-"""
-
-Tool registry
-─────────────
-  aggregate_metrics   — per-metric stats, threshold breach flags, health score
-  detect_anomalies    — Z-score anomaly detection across all time-series
-  summarize_sentiment — channel/theme/timeline breakdown of user feedback
-  compare_trends      — baseline deltas, direction, velocity, recovery ETA
-"""
+# Tools that agents call before the LLM to process raw dashboard data.
 
 from __future__ import annotations
 
 import math
 from typing import Any
 
-# ════════════════════════════════════════════════════════════════════════════
-#  Tool 1 — Metric Aggregation & Threshold Check
-# ════════════════════════════════════════════════════════════════════════════
 
-_METRIC_KEYS = [
-    "crash_rate_pct",
-    "p95_latency_ms",
-    "signup_conversion_pct",
-    "retention_d1_pct",
-    "retention_d7_pct",
-    "payment_success_pct",
-    "support_tickets",
-    "feature_funnel_completion_pct",
-    "churn_cancellations",
+# Unified metric config: (criteria_key, "max"|"min"|None, baseline_key, lower_is_better)
+METRIC_CONFIG = {
+    "crash_rate_pct":               ("max_crash_rate_pct",              "max", "crash_rate_pct",               True),
+    "p95_latency_ms":               ("max_p95_latency_ms",             "max", "p95_latency_ms",               True),
+    "signup_conversion_pct":        ("min_signup_conversion_pct",      "min", "signup_conversion_pct",        False),
+    "retention_d1_pct":             ("min_retention_d1_pct",           "min", "retention_d1_pct",             False),
+    "retention_d7_pct":             ("min_retention_d7_pct",           "min", "retention_d7_pct",             False),
+    "payment_success_pct":          ("min_payment_success_pct",        "min", "payment_success_pct",          False),
+    "support_tickets":              ("max_support_tickets_per_day",    "max", "avg_support_tickets_per_day",  True),
+    "feature_funnel_completion_pct": ("min_feature_funnel_completion_pct", "min", "feature_funnel_completion_pct", False),
+    "churn_cancellations":          (None,                              None, "avg_churn_cancellations_per_day", True),
+}
+
+THEME_KEYWORDS = {
+    "performance/latency": ["slow", "lag", "latency", "speed", "loading", "fast"],
+    "data_loss":           ["lost", "disappeared", "data loss", "draft", "vanished", "gone"],
+    "opt_out":             ["opt-out", "opt out", "disable", "turn off", "toggle", "opt_out"],
+    "crash/freeze":        ["crash", "froze", "freeze", "hang", "unresponsive"],
+    "ai_quality":          ["wrong", "inappropriate", "embarrassing", "autocomplete",
+                            "suggestion", "compose", "weird"],
+    "positive_experience": ["love", "amazing", "great", "awesome", "helpful",
+                            "impressed", "game-changer", "incredible"],
+    "accessibility":       ["accessibility", "disability", "screen reader", "a11y"],
+}
+
+HIGH_IMPACT_CHANNELS = {"reddit", "twitter", "app_store"}
+HIGH_IMPACT_SIGNALS = ["reddit", "twitter", "psa", "app store", "data loss", "embarrass"]
+
+# Trend comparison config: (metric_key, baseline_key, polarity)
+TREND_CONFIGS = [
+    ("crash_rate_pct",               "crash_rate_pct",                  "lower_is_better"),
+    ("p95_latency_ms",               "p95_latency_ms",                  "lower_is_better"),
+    ("signup_conversion_pct",        "signup_conversion_pct",           "higher_is_better"),
+    ("retention_d1_pct",             "retention_d1_pct",                "higher_is_better"),
+    ("retention_d7_pct",             "retention_d7_pct",                "higher_is_better"),
+    ("payment_success_pct",          "payment_success_pct",             "higher_is_better"),
+    ("support_tickets",              "avg_support_tickets_per_day",     "lower_is_better"),
+    ("churn_cancellations",          "avg_churn_cancellations_per_day", "lower_is_better"),
 ]
-
-# Maps metric → (criteria key, "max" | "min")
-_CRITERIA_MAP: dict[str, tuple[str, str]] = {
-    "crash_rate_pct":               ("max_crash_rate_pct", "max"),
-    "p95_latency_ms":               ("max_p95_latency_ms", "max"),
-    "signup_conversion_pct":        ("min_signup_conversion_pct", "min"),
-    "retention_d1_pct":             ("min_retention_d1_pct", "min"),
-    "retention_d7_pct":             ("min_retention_d7_pct", "min"),
-    "payment_success_pct":          ("min_payment_success_pct", "min"),
-    "support_tickets":              ("max_support_tickets_per_day", "max"),
-    "feature_funnel_completion_pct": ("min_feature_funnel_completion_pct", "min"),
-}
-
-# Maps metric → baseline key
-_BASELINE_MAP: dict[str, str] = {
-    "crash_rate_pct":               "crash_rate_pct",
-    "p95_latency_ms":               "p95_latency_ms",
-    "signup_conversion_pct":        "signup_conversion_pct",
-    "retention_d1_pct":             "retention_d1_pct",
-    "retention_d7_pct":             "retention_d7_pct",
-    "payment_success_pct":          "payment_success_pct",
-    "support_tickets":              "avg_support_tickets_per_day",
-    "feature_funnel_completion_pct": "feature_funnel_completion_pct",
-    "churn_cancellations":          "avg_churn_cancellations_per_day",
-}
-
-_LOWER_IS_BETTER = {"crash_rate_pct", "p95_latency_ms", "support_tickets", "churn_cancellations"}
 
 
 def aggregate_metrics(dashboard: dict) -> dict[str, Any]:
-    """Per-metric summary: latest, min, max, mean, trend, threshold breach.
-
-    Returns
-    -------
-    dict with keys ``metric_summaries``, ``total_metrics``,
-    ``breaching_count``, ``overall_health``.
-    """
+    """Per-metric summary with trend direction and threshold breach checks."""
     daily = dashboard["daily_metrics"]
     baseline = dashboard["baseline_metrics"]
     criteria = dashboard["success_criteria"]
 
-    summaries: dict[str, Any] = {}
+    summaries = {}
     breaching = 0
 
-    for metric in _METRIC_KEYS:
+    for metric, (crit_key, crit_type, bl_key, lower_better) in METRIC_CONFIG.items():
         values = [d[metric] for d in daily if d.get(metric) is not None]
         if not values:
             continue
 
         latest = values[-1]
-        mn = min(values)
-        mx = max(values)
+        mn, mx = min(values), max(values)
         avg = sum(values) / len(values)
 
-        # Trend: last-3-day avg vs first-3-day avg
+        # Trend: compare first-3 vs last-3 day averages
         if len(values) >= 6:
             early = sum(values[:3]) / 3
             late = sum(values[-3:]) / 3
-            if metric in _LOWER_IS_BETTER:
+            if lower_better:
                 trend = "improving" if late < early else ("worsening" if late > early else "stable")
             else:
                 trend = "improving" if late > early else ("worsening" if late < early else "stable")
         else:
             trend = "insufficient_data"
 
-        # Threshold breach
+        # Check if latest value breaches the threshold
         breached = False
         threshold = None
-        if metric in _CRITERIA_MAP:
-            crit_key, crit_type = _CRITERIA_MAP[metric]
+        if crit_key and crit_type:
             threshold = criteria.get(crit_key)
             if threshold is not None:
                 if crit_type == "max" and latest > threshold:
@@ -107,8 +89,6 @@ def aggregate_metrics(dashboard: dict) -> dict[str, Any]:
             if breached:
                 breaching += 1
 
-        # Baseline delta
-        bl_key = _BASELINE_MAP.get(metric)
         bl_val = baseline.get(bl_key) if bl_key else None
         delta_pct = (
             round(((latest - bl_val) / bl_val) * 100, 1)
@@ -116,19 +96,12 @@ def aggregate_metrics(dashboard: dict) -> dict[str, Any]:
         )
 
         summaries[metric] = {
-            "latest": latest,
-            "min": mn,
-            "max": mx,
-            "mean": round(avg, 2),
-            "trend": trend,
-            "threshold": threshold,
-            "breached": breached,
-            "baseline": bl_val,
-            "delta_from_baseline_pct": delta_pct,
+            "latest": latest, "min": mn, "max": mx, "mean": round(avg, 2),
+            "trend": trend, "threshold": threshold, "breached": breached,
+            "baseline": bl_val, "delta_from_baseline_pct": delta_pct,
         }
 
     health = "healthy" if breaching == 0 else ("degraded" if breaching <= 2 else "critical")
-
     return {
         "metric_summaries": summaries,
         "total_metrics": len(summaries),
@@ -137,33 +110,18 @@ def aggregate_metrics(dashboard: dict) -> dict[str, Any]:
     }
 
 
-# ════════════════════════════════════════════════════════════════════════════
-#  Tool 2 — Anomaly Detection (Z-score)
-# ════════════════════════════════════════════════════════════════════════════
-
-_ANOMALY_METRICS = [
-    "crash_rate_pct",
-    "p95_latency_ms",
-    "signup_conversion_pct",
-    "retention_d1_pct",
-    "retention_d7_pct",
-    "payment_success_pct",
-    "support_tickets",
-    "churn_cancellations",
-]
-
-
 def detect_anomalies(dashboard: dict, *, z_threshold: float = 2.0) -> dict[str, Any]:
-    """Z-score anomaly detection across all time-series metrics.
-
-    Returns
-    -------
-    dict with ``anomalies`` list (sorted by severity) and ``total_anomalies``.
-    """
+    """Z-score anomaly detection across daily metric time-series."""
     daily = dashboard["daily_metrics"]
-    anomalies: list[dict[str, Any]] = []
+    anomalies = []
 
-    for metric in _ANOMALY_METRICS:
+    # skip feature_funnel_completion_pct — no meaningful baseline for z-score on a new feature
+    skip = {"feature_funnel_completion_pct"}
+
+    for metric in METRIC_CONFIG:
+        if metric in skip:
+            continue
+
         values = [(d["day"], d[metric]) for d in daily if d.get(metric) is not None]
         if len(values) < 3:
             continue
@@ -178,15 +136,11 @@ def detect_anomalies(dashboard: dict, *, z_threshold: float = 2.0) -> dict[str, 
         for day, val in values:
             z = abs(val - mean) / std
             if z >= z_threshold:
-                direction = "spike" if val > mean else "drop"
                 anomalies.append({
-                    "metric": metric,
-                    "day": day,
-                    "value": val,
-                    "mean": round(mean, 2),
-                    "std_dev": round(std, 2),
+                    "metric": metric, "day": day, "value": val,
+                    "mean": round(mean, 2), "std_dev": round(std, 2),
                     "z_score": round(z, 2),
-                    "direction": direction,
+                    "direction": "spike" if val > mean else "drop",
                     "severity": "high" if z >= 3.0 else "medium",
                 })
 
@@ -194,42 +148,15 @@ def detect_anomalies(dashboard: dict, *, z_threshold: float = 2.0) -> dict[str, 
     return {"anomalies": anomalies, "total_anomalies": len(anomalies)}
 
 
-# ════════════════════════════════════════════════════════════════════════════
-#  Tool 3 — Sentiment Summary
-# ════════════════════════════════════════════════════════════════════════════
-
-_THEME_KEYWORDS: dict[str, list[str]] = {
-    "performance/latency": ["slow", "lag", "latency", "speed", "loading", "fast"],
-    "data_loss":           ["lost", "disappeared", "data loss", "draft", "vanished", "gone"],
-    "opt_out":             ["opt-out", "opt out", "disable", "turn off", "toggle", "opt_out"],
-    "crash/freeze":        ["crash", "froze", "freeze", "hang", "unresponsive"],
-    "ai_quality":          ["wrong", "inappropriate", "embarrassing", "autocomplete",
-                            "suggestion", "compose", "weird"],
-    "positive_experience": ["love", "amazing", "great", "awesome", "helpful",
-                            "impressed", "game-changer", "incredible"],
-    "accessibility":       ["accessibility", "disability", "screen reader", "a11y"],
-}
-
-_HIGH_IMPACT_CHANNELS = {"reddit", "twitter", "app_store"}
-_HIGH_IMPACT_SIGNALS  = ["reddit", "twitter", "psa", "app store", "data loss", "embarrass"]
-
-
 def summarize_sentiment(dashboard: dict) -> dict[str, Any]:
-    """Channel/theme/timeline breakdown of user feedback.
-
-    Returns
-    -------
-    dict with ``total_feedback``, ``sentiment_breakdown``, ``by_channel``,
-    ``top_themes``, ``sentiment_timeline``, ``high_impact_items``,
-    ``net_sentiment_score``.
-    """
+    """Breaks down user feedback by channel, theme, and timeline."""
     feedback = dashboard["user_feedback"]
 
-    by_channel: dict[str, dict[str, int]] = {}
-    by_sentiment: dict[str, int] = {"positive": 0, "negative": 0, "neutral": 0, "mixed": 0}
-    themes: dict[str, int] = {}
-    timeline: dict[int, dict[str, int]] = {}
-    high_impact: list[dict[str, Any]] = []
+    by_channel = {}
+    by_sentiment = {"positive": 0, "negative": 0, "neutral": 0, "mixed": 0}
+    themes = {}
+    timeline = {}
+    high_impact = []
 
     for entry in feedback:
         channel = entry.get("channel", "unknown")
@@ -237,38 +164,31 @@ def summarize_sentiment(dashboard: dict) -> dict[str, Any]:
         day = entry.get("day", 0)
         text = entry.get("feedback_text", "")
 
-        # Channel breakdown
         if channel not in by_channel:
             by_channel[channel] = {"positive": 0, "negative": 0, "neutral": 0, "mixed": 0, "total": 0}
         by_channel[channel][sentiment] = by_channel[channel].get(sentiment, 0) + 1
         by_channel[channel]["total"] += 1
 
-        # Overall sentiment
         by_sentiment[sentiment] = by_sentiment.get(sentiment, 0) + 1
 
-        # Timeline
         if day not in timeline:
             timeline[day] = {"positive": 0, "negative": 0, "neutral": 0, "mixed": 0}
         timeline[day][sentiment] = timeline[day].get(sentiment, 0) + 1
 
-        # Theme extraction
+        # match feedback text against known themes
         text_lower = text.lower()
-        for theme, keywords in _THEME_KEYWORDS.items():
+        for theme, keywords in THEME_KEYWORDS.items():
             if any(kw in text_lower for kw in keywords):
                 themes[theme] = themes.get(theme, 0) + 1
 
-        # High-impact items
-        if any(sig in text_lower for sig in _HIGH_IMPACT_SIGNALS):
-            if channel in _HIGH_IMPACT_CHANNELS:
+        # flag high-impact items (viral risk channels + sensitive keywords)
+        if any(sig in text_lower for sig in HIGH_IMPACT_SIGNALS):
+            if channel in HIGH_IMPACT_CHANNELS:
                 high_impact.append({
-                    "day": day,
-                    "channel": channel,
-                    "sentiment": sentiment,
-                    "snippet": text[:120],
+                    "day": day, "channel": channel,
+                    "sentiment": sentiment, "snippet": text[:120],
                 })
 
-    sorted_timeline = dict(sorted(timeline.items()))
-    sorted_themes = dict(sorted(themes.items(), key=lambda x: -x[1]))
     total = max(len(feedback), 1)
     net_score = round((by_sentiment["positive"] - by_sentiment["negative"]) / total, 2)
 
@@ -276,44 +196,23 @@ def summarize_sentiment(dashboard: dict) -> dict[str, Any]:
         "total_feedback": len(feedback),
         "sentiment_breakdown": by_sentiment,
         "by_channel": by_channel,
-        "top_themes": sorted_themes,
-        "sentiment_timeline": sorted_timeline,
+        "top_themes": dict(sorted(themes.items(), key=lambda x: -x[1])),
+        "sentiment_timeline": dict(sorted(timeline.items())),
         "high_impact_items": high_impact[:10],
         "net_sentiment_score": net_score,
     }
 
 
-# ════════════════════════════════════════════════════════════════════════════
-#  Tool 4 — Trend Comparison (vs baseline)
-# ════════════════════════════════════════════════════════════════════════════
-
-_TREND_CONFIGS: list[tuple[str, str, str]] = [
-    ("crash_rate_pct",               "crash_rate_pct",               "lower_is_better"),
-    ("p95_latency_ms",               "p95_latency_ms",               "lower_is_better"),
-    ("signup_conversion_pct",        "signup_conversion_pct",        "higher_is_better"),
-    ("retention_d1_pct",             "retention_d1_pct",             "higher_is_better"),
-    ("retention_d7_pct",             "retention_d7_pct",             "higher_is_better"),
-    ("payment_success_pct",          "payment_success_pct",          "higher_is_better"),
-    ("support_tickets",              "avg_support_tickets_per_day",  "lower_is_better"),
-    ("churn_cancellations",          "avg_churn_cancellations_per_day", "lower_is_better"),
-]
-
-
 def compare_trends(dashboard: dict) -> dict[str, Any]:
-    """Baseline deltas, direction, 3-day velocity, linear recovery ETA.
-
-    Returns
-    -------
-    dict with ``comparisons`` list and ``improving_count`` / ``worsening_count``.
-    """
+    """Compares current metrics to baseline with velocity and recovery ETA."""
     daily = dashboard["daily_metrics"]
     baseline = dashboard["baseline_metrics"]
 
-    comparisons: list[dict[str, Any]] = []
+    comparisons = []
     improving = 0
     worsening = 0
 
-    for metric_key, baseline_key, polarity in _TREND_CONFIGS:
+    for metric_key, baseline_key, polarity in TREND_CONFIGS:
         values = [d[metric_key] for d in daily if d.get(metric_key) is not None]
         if len(values) < 2:
             continue
@@ -329,7 +228,6 @@ def compare_trends(dashboard: dict) -> dict[str, Any]:
         else:
             velocity = 0.0
 
-        # Direction
         if abs(velocity) < 0.01:
             direction = "stable"
         elif (velocity > 0 and polarity == "higher_is_better") or \
@@ -340,11 +238,11 @@ def compare_trends(dashboard: dict) -> dict[str, Any]:
             direction = "worsening"
             worsening += 1
 
-        # Linear extrapolation: days to reach baseline
+        # rough linear extrapolation: how many days to get back to baseline
         days_to_baseline = None
         if bl_val is not None and velocity != 0:
             gap = (latest - bl_val) if polarity == "lower_is_better" else (bl_val - latest)
-            if gap > 0:  # not yet recovered
+            if gap > 0:
                 daily_rate = abs(velocity) / 3
                 if daily_rate > 0:
                     days_to_baseline = round(gap / daily_rate, 1)
@@ -356,14 +254,9 @@ def compare_trends(dashboard: dict) -> dict[str, Any]:
         )
 
         comparisons.append({
-            "metric": metric_key,
-            "latest": latest,
-            "baseline": bl_val,
-            "delta": delta,
-            "delta_pct": delta_pct,
-            "direction": direction,
-            "velocity_per_3d": velocity,
-            "projected_days_to_baseline": days_to_baseline,
+            "metric": metric_key, "latest": latest, "baseline": bl_val,
+            "delta": delta, "delta_pct": delta_pct, "direction": direction,
+            "velocity_per_3d": velocity, "projected_days_to_baseline": days_to_baseline,
         })
 
     return {
@@ -373,29 +266,22 @@ def compare_trends(dashboard: dict) -> dict[str, Any]:
     }
 
 
-# ════════════════════════════════════════════════════════════════════════════
-#  Tool Registry
-# ════════════════════════════════════════════════════════════════════════════
-
-TOOL_REGISTRY: dict[str, dict[str, Any]] = {
+# Registry used by BaseAgent._invoke_tools()
+TOOL_REGISTRY = {
     "aggregate_metrics": {
         "fn": aggregate_metrics,
-        "description": "Per-metric stats (latest/min/max/mean), trend direction, "
-                       "threshold breach flags, and overall health score.",
+        "description": "Per-metric stats, trend direction, threshold breach flags, overall health.",
     },
     "detect_anomalies": {
         "fn": detect_anomalies,
-        "description": "Z-score anomaly detection across all daily metric "
-                       "time-series.  Returns spikes/drops with severity.",
+        "description": "Z-score anomaly detection across daily metrics. Returns spikes/drops with severity.",
     },
     "summarize_sentiment": {
         "fn": summarize_sentiment,
-        "description": "Channel/theme/timeline breakdown of user feedback "
-                       "with high-impact item detection.",
+        "description": "Channel/theme/timeline breakdown of user feedback with high-impact detection.",
     },
     "compare_trends": {
         "fn": compare_trends,
-        "description": "Baseline deltas, 3-day velocity, direction, and "
-                       "linear extrapolation of recovery time.",
+        "description": "Baseline deltas, 3-day velocity, direction, and recovery time estimate.",
     },
 }
