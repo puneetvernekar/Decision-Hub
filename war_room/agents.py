@@ -1,45 +1,12 @@
 import json
-import re
 import textwrap
-import time
 
 from .models import AgentVerdict, Decision
 from .tools import TOOL_REGISTRY
 from .trace import trace
 
-# ── Retry helper for rate-limited APIs ──────────────────────────────────────
 
-_MAX_RETRIES = 5
-
-
-def _llm_call_with_retry(client, **kwargs):
-    """Call ``client.chat.completions.create`` with automatic retry on 429.
-
-    Parses the retry delay from the error message when available and falls
-    back to exponential backoff otherwise.
-    """
-    for attempt in range(1, _MAX_RETRIES + 1):
-        try:
-            return client.chat.completions.create(**kwargs)
-        except Exception as exc:
-            err_str = str(exc)
-            if "429" not in err_str and "rate_limit" not in err_str.lower():
-                raise  # not a rate-limit error — propagate immediately
-
-            # Try to parse the suggested wait from the error message
-            match = re.search(r"try again in ([\d.]+)s", err_str, re.IGNORECASE)
-            wait = float(match.group(1)) + 1.0 if match else min(2 ** attempt, 30)
-
-            if attempt == _MAX_RETRIES:
-                raise  # exhausted retries
-
-            trace("rate_limit", "retry",
-                  f"429 hit — waiting {wait:.1f}s before retry {attempt}/{_MAX_RETRIES}")
-            time.sleep(wait)
-
-# ── Shared JSON extraction helper ───────────────────────────────────────────
-
-_VERDICT_SCHEMA = textwrap.dedent("""\
+VERDICT_SCHEMA = """\
 {
   "decision": "Proceed | Pause | Roll Back",
   "confidence": 0.0-1.0,
@@ -47,79 +14,77 @@ _VERDICT_SCHEMA = textwrap.dedent("""\
   "key_evidence": ["...", "..."],
   "recommended_actions": ["...", "..."],
   "dissent_notes": "... or null"
-}""")
+}"""
 
 
-def _parse_verdict(raw: str, agent_name: str, role: str) -> AgentVerdict:
-    """Extract a JSON verdict from the LLM response text."""
+def parse_verdict(raw, agent_name, role):
+    """Pull the JSON verdict out of the LLM's response."""
     start = raw.find("{")
     end = raw.rfind("}") + 1
     if start == -1 or end == 0:
         raise ValueError(f"No JSON object found in {agent_name} response")
-    payload = json.loads(raw[start:end])
-    confidence = float(payload["confidence"])
-    if confidence > 1.0:
-        confidence = confidence / 100.0
-    confidence = max(0.0, min(1.0, confidence))
+
+    data = json.loads(raw[start:end])
+
+    conf = float(data["confidence"])
+    if conf > 1.0:
+        conf = conf / 100.0
+    conf = max(0.0, min(1.0, conf))
+
     return AgentVerdict(
         agent_name=agent_name,
         role=role,
-        decision=Decision(payload["decision"]),
-        confidence=confidence,
-        rationale=payload["rationale"],
-        key_evidence=payload["key_evidence"],
-        recommended_actions=payload["recommended_actions"],
-        dissent_notes=payload.get("dissent_notes"),
+        decision=Decision(data["decision"]),
+        confidence=conf,
+        rationale=data["rationale"],
+        key_evidence=data["key_evidence"],
+        recommended_actions=data["recommended_actions"],
+        dissent_notes=data.get("dissent_notes"),
     )
 
 
-def format_verdicts_summary(verdicts: list[AgentVerdict]) -> str:
-    """Format a list of verdicts into a readable summary for LLM prompts."""
-    return "\n\n".join(
-        f"**{v.agent_name}** ({v.role}) → {v.decision.value} "
-        f"(confidence {v.confidence:.0%})\n"
-        f"Rationale: {v.rationale}\n"
-        f"Evidence: {'; '.join(v.key_evidence)}\n"
-        f"Recommended actions: {'; '.join(v.recommended_actions)}"
-        + (f"\nDissent: {v.dissent_notes}" if v.dissent_notes else "")
-        for v in verdicts
-    )
+def format_verdicts_summary(verdicts):
+    """Turn a list of verdicts into readable text for LLM prompts."""
+    parts = []
+    for v in verdicts:
+        block = (
+            f"**{v.agent_name}** ({v.role}) -> {v.decision.value} "
+            f"(confidence {v.confidence:.0%})\n"
+            f"Rationale: {v.rationale}\n"
+            f"Evidence: {'; '.join(v.key_evidence)}\n"
+            f"Recommended actions: {'; '.join(v.recommended_actions)}"
+        )
+        if v.dissent_notes:
+            block += f"\nDissent: {v.dissent_notes}"
+        parts.append(block)
+    return "\n\n".join(parts)
 
 
-# ── Base agent ──────────────────────────────────────────────────────────────
+# -- Base agent --
 
 class BaseAgent:
-    """Base class for war-room agents."""
+    """Base class all war-room agents inherit from."""
 
-    name: str = "BaseAgent"
-    role: str = "base"
-    system_prompt: str = ""
-    tools: list[str] = []   # tool names from TOOL_REGISTRY
+    name = "BaseAgent"
+    role = "base"
+    system_prompt = ""
+    tools = []
 
     def __init__(self, client, model="gpt-4o"):
         self.client = client
         self.model = model
-        self.last_tool_results = {}  # filled by _invoke_tools
+        self.last_tool_results = {}
 
-    # ── Tool invocation machinery ───────────────────────────────────────
-
-    def _invoke_tools(self, dashboard):
-        """Programmatically call every tool listed in ``self.tools``.
-
-        Returns a dict mapping tool name → structured result.
-        Also stores results in ``self.last_tool_results`` so the
-        orchestrator can log which tools were invoked.
-        """
+    def run_tools(self, dashboard):
+        """Call each tool in self.tools and return {name: result}."""
         results = {}
-        for tool_name in self.tools:
-            entry = TOOL_REGISTRY[tool_name]
-            results[tool_name] = entry["fn"](dashboard)
+        for name in self.tools:
+            results[name] = TOOL_REGISTRY[name]["fn"](dashboard)
         self.last_tool_results = results
         return results
 
-    @staticmethod
-    def _format_tool_outputs(tool_results) -> str:
-        """Render tool outputs as labelled JSON blocks for the LLM prompt."""
+    def _format_tool_text(self, tool_results):
+        """Format tool results as markdown+json blocks for the prompt."""
         if not tool_results:
             return ""
         sections = []
@@ -131,66 +96,47 @@ class BaseAgent:
             )
         return "\n\n".join(sections)
 
-    # ── Phase 1: independent analysis ───────────────────────────────────
-
-    def _build_user_message(self, dashboard: dict, tool_outputs: str = "") -> str:
-        parts = [
+    def _build_prompt(self, dashboard, tool_text=""):
+        """Build the user message with dashboard data + tool outputs."""
+        msg = (
             "Here is the current launch dashboard data (10-day daily metrics, "
-            "baseline comparisons, aggregate KPIs, 35 user feedback entries, "
-            "success criteria, release notes, and known issues):\n\n"
-            f"```json\n{json.dumps(dashboard, indent=2)}\n```",
-        ]
-        if tool_outputs:
-            parts.append(
-                "\n\nBelow are pre-computed analysis results from the tools "
-                "you invoked.  Use these as the primary basis for your "
-                "assessment — they contain aggregated stats, anomalies, "
-                "sentiment breakdowns, and/or trend comparisons that have "
-                "already been computed from the raw data above.\n\n"
-                + tool_outputs
-            )
-        parts.append(
-            f"\n\nProduce your verdict as a JSON object with this exact schema:\n{_VERDICT_SCHEMA}"
+            "baselines, user feedback, success criteria, release notes, "
+            "and known issues):\n\n"
+            f"```json\n{json.dumps(dashboard, indent=2)}\n```"
         )
-        return "\n".join(parts)
+        if tool_text:
+            msg += (
+                "\n\nBelow are pre-computed analysis results from the tools. "
+                "Use these as the primary basis for your assessment:\n\n"
+                + tool_text
+            )
+        msg += f"\n\nProduce your verdict as JSON matching this schema:\n{VERDICT_SCHEMA}"
+        return msg
 
-    def analyze(self, dashboard: dict) -> AgentVerdict:
-        """Phase 1: Invoke tools, then call the LLM with enriched context."""
-        trace(self.name, "tool_call", f"Invoking {len(self.tools)} tool(s): {', '.join(self.tools)}")
-        tool_results = self._invoke_tools(dashboard)
-        trace(self.name, "tool_done", f"{len(tool_results)} tool result(s) received")
-        tool_text = self._format_tool_outputs(tool_results)
+    def analyze(self, dashboard):
+        """Phase 1: run tools, then ask the LLM for an independent verdict."""
+        trace(self.name, "tool_call", f"Running tools: {', '.join(self.tools)}")
+        tool_results = self.run_tools(dashboard)
+        tool_text = self._format_tool_text(tool_results)
 
-        trace(self.name, "llm_call", "Sending enriched prompt to LLM")
-        response = _llm_call_with_retry(
-            self.client,
+        trace(self.name, "llm_call", "Sending prompt to LLM")
+        resp = self.client.chat.completions.create(
             model=self.model,
             temperature=0.3,
             messages=[
                 {"role": "system", "content": self.system_prompt},
-                {"role": "user", "content": self._build_user_message(dashboard, tool_text)},
+                {"role": "user", "content": self._build_prompt(dashboard, tool_text)},
             ],
         )
-        raw = response.choices[0].message.content
-        verdict = _parse_verdict(raw, self.name, self.role)
-        trace(self.name, "verdict", f"{verdict.decision.value} (confidence: {verdict.confidence:.0%})")
+        raw = resp.choices[0].message.content
+        verdict = parse_verdict(raw, self.name, self.role)
+        trace(self.name, "verdict", f"{verdict.decision.value} ({verdict.confidence:.0%})")
         return verdict
 
-    # ── Phase 2b: revision after deliberation ───────────────────────────
-
-    def revise(
-        self,
-        dashboard: dict,
-        own_verdict: AgentVerdict,
-        peer_verdicts: list[AgentVerdict],
-        critique: AgentVerdict,
-    ) -> AgentVerdict:
-        """Revise verdict after seeing peers' verdicts and the Risk/Critic's
-        challenge.  The agent may adjust its decision, confidence, or
-        rationale — or hold firm with stronger justification."""
-
-        peers_summary = format_verdicts_summary(peer_verdicts)
-        critique_summary = format_verdicts_summary([critique])
+    def revise(self, dashboard, own_verdict, peer_verdicts, critique):
+        """Phase 2b: reconsider after seeing peers + the critic's challenge."""
+        peers_text = format_verdicts_summary(peer_verdicts)
+        critique_text = format_verdicts_summary([critique])
 
         prompt = textwrap.dedent(f"""\
             You previously submitted this verdict:
@@ -198,27 +144,22 @@ class BaseAgent:
             Rationale: {own_verdict.rationale}
             Evidence: {'; '.join(own_verdict.key_evidence)}
 
-            Here are the other agents' verdicts:
-            {peers_summary}
+            Other agents' verdicts:
+            {peers_text}
 
-            Here is the Risk/Critic's challenge:
-            {critique_summary}
+            Risk/Critic's challenge:
+            {critique_text}
 
-            Based on the other agents' perspectives and the Risk/Critic's
-            challenges, reconsider your position:
-            • Have any new arguments changed your view?
-            • You may adjust your decision, confidence, rationale, or actions.
-            • If you stand firm, strengthen your justification and address
-              the challenges directly.
-            • Use dissent_notes to flag any disagreements with the group.
+            Reconsider your position. You can adjust your decision,
+            confidence, rationale, or actions. If you stand firm, address
+            the challenges directly. Use dissent_notes for disagreements.
 
-            Produce your REVISED verdict as a JSON object:
-            {_VERDICT_SCHEMA}
+            Produce your REVISED verdict as JSON:
+            {VERDICT_SCHEMA}
         """)
 
-        trace(self.name, "llm_call", "Revising verdict after deliberation")
-        response = _llm_call_with_retry(
-            self.client,
+        trace(self.name, "llm_call", "Revising verdict")
+        resp = self.client.chat.completions.create(
             model=self.model,
             temperature=0.3,
             messages=[
@@ -226,13 +167,13 @@ class BaseAgent:
                 {"role": "user", "content": prompt},
             ],
         )
-        raw = response.choices[0].message.content
-        verdict = _parse_verdict(raw, self.name, self.role)
-        trace(self.name, "revised", f"{verdict.decision.value} (confidence: {verdict.confidence:.0%})")
+        raw = resp.choices[0].message.content
+        verdict = parse_verdict(raw, self.name, self.role)
+        trace(self.name, "revised", f"{verdict.decision.value} ({verdict.confidence:.0%})")
         return verdict
 
 
-# ── Concrete Phase-1 agents ────────────────────────────────────────────────
+# -- Phase 1 agents --
 
 class ProductManagerAgent(BaseAgent):
     name = "Product Manager"
@@ -240,17 +181,13 @@ class ProductManagerAgent(BaseAgent):
     tools = ["aggregate_metrics", "compare_trends"]
     system_prompt = textwrap.dedent("""\
         You are the Product Manager in a product-launch war room.
-        Your responsibilities:
-        • Define and evaluate success criteria for the launch.
-        • Assess user impact — both positive adoption signals and negative friction.
-        • Frame the go / no-go decision from a product perspective.
-        • Weigh short-term pain against long-term strategic value.
-        • Evaluate retention (D1/D7), NPS, and CSAT trends.
-        • Consider the release notes and known issues in your assessment.
+        Define and evaluate success criteria for the launch. Assess user
+        impact -- both positive adoption and negative friction. Weigh
+        short-term pain against long-term strategic value. Look at
+        retention (D1/D7), NPS, CSAT trends, release notes, and known issues.
 
-        Be data-driven but also consider qualitative user sentiment.
-        Compare current daily metrics against the pre-defined success criteria.
-        Your decision must be one of: Proceed, Pause, or Roll Back.
+        Be data-driven but factor in qualitative sentiment too.
+        Decision must be one of: Proceed, Pause, or Roll Back.
         Respond ONLY with the JSON verdict object.
     """)
 
@@ -261,20 +198,14 @@ class DataAnalystAgent(BaseAgent):
     tools = ["aggregate_metrics"]
     system_prompt = textwrap.dedent("""\
         You are the Data Analyst in a product-launch war room.
-        Your responsibilities:
-        • Perform quantitative analysis of the 10-day daily metric trends.
-        • Analyse all 9 metric dimensions: crash rate, p95 latency, signup
-          conversion, D1/D7 retention, payment success rate, support ticket
-          volume, NPS, and CSAT.
-        • Identify anomalies, inflection points, and statistically meaningful shifts.
-        • Compare current metrics to baseline and success criteria thresholds.
-        • Assess whether trends are worsening, stabilising, or recovering.
-        • Note any correlation between metrics (e.g., latency ↔ crash rate).
-        • Quantify confidence in your assessment.
+        Quantitatively analyse the 10-day metric trends across all 9
+        dimensions: crash rate, p95 latency, signup conversion, D1/D7
+        retention, payment success, support tickets, NPS, and CSAT.
+        Flag anomalies, inflection points, and threshold breaches.
+        Note correlations (e.g. latency vs crash rate).
 
-        Focus on numbers, trends, and statistical reasoning.
-        Clearly state which thresholds are breached and by how much.
-        Your decision must be one of: Proceed, Pause, or Roll Back.
+        Focus on numbers and statistical reasoning.
+        Decision must be one of: Proceed, Pause, or Roll Back.
         Respond ONLY with the JSON verdict object.
     """)
 
@@ -284,71 +215,60 @@ class MarketingCommsAgent(BaseAgent):
     role = "marketing_comms"
     tools = ["summarize_sentiment"]
     system_prompt = textwrap.dedent("""\
-        You are the Marketing & Communications lead in a product-launch war room.
-        Your responsibilities:
-        • Assess public perception from 35 user feedback entries across 6 channels
-          (in-app, support, Twitter, Reddit, app-store, outliers).
-        • Identify repeated themes, sentiment trends over the 10-day window, and
-          high-impact outliers (e.g., accessibility praise, embarrassing auto-completes).
-        • Evaluate brand risk including app-store rating impact and social virality.
-        • Recommend proactive communication actions (blog posts, in-app banners,
-          social responses, press statements).
-        • Consider whether messaging can mitigate user frustration or if product
-          changes are needed first.
-        • Factor in the known issues list and the missing opt-out toggle.
+        You are the Marketing & Comms lead in a product-launch war room.
+        Assess public perception from user feedback across all channels
+        (in-app, support, Twitter, Reddit, app-store). Identify recurring
+        themes, high-impact outliers, and brand risk. Recommend comms
+        actions (blog posts, in-app banners, social responses).
+        Factor in known issues and the missing opt-out toggle.
 
-        Balance brand protection with the opportunity of positive buzz.
-        Your decision must be one of: Proceed, Pause, or Roll Back.
+        Balance brand protection with positive buzz opportunity.
+        Decision must be one of: Proceed, Pause, or Roll Back.
         Respond ONLY with the JSON verdict object.
     """)
 
 
-# ── Risk / Critic (Phase 2a agent) ─────────────────────────────────────────
+# -- Risk / Critic (Phase 2a) --
 
 class RiskCriticAgent(BaseAgent):
     name = "Risk / Critic"
     role = "risk_critic"
     tools = ["aggregate_metrics"]
     system_prompt = textwrap.dedent("""\
-        You are the Risk Analyst and Devil's Advocate in a product-launch war room.
-        Your responsibilities:
-        • Challenge optimistic assumptions made by the other agents.
-        • Highlight worst-case scenarios and tail risks across all metrics.
-        • Flag critical known issues and assess whether they alone warrant rollback.
-        • Assess cascading failure risks (e.g., latency → crashes → churn → revenue).
-        • Evaluate whether extrapolating from current rollout to full rollout is safe.
-        • Identify gaps in the data or areas where more evidence is needed.
-        • Call out if the team may be suffering from sunk-cost or confirmation bias.
-        • Consider payment failure rate trends and revenue impact.
+        You are the Risk Analyst and Devil's Advocate in a launch war room.
+        Challenge optimistic assumptions. Highlight worst-case scenarios
+        and tail risks. Flag critical known issues. Assess cascading
+        failure risks (latency -> crashes -> churn -> revenue). Evaluate
+        if current rollout trends are safe to extrapolate to full rollout.
+        Watch for sunk-cost or confirmation bias.
 
-        Be constructively critical. Your job is to stress-test the decision.
-        Your decision must be one of: Proceed, Pause, or Roll Back.
+        Be constructively critical -- your job is to stress-test the decision.
+        Decision must be one of: Proceed, Pause, or Roll Back.
         Respond ONLY with the JSON verdict object.
     """)
 
-    def challenge(self, dashboard: dict, verdicts: list[AgentVerdict]) -> AgentVerdict:
-        """Phase 2a: Invoke tools, then review all Phase 1 verdicts critically."""
-        trace(self.name, "tool_call", f"Invoking {len(self.tools)} tool(s): {', '.join(self.tools)}")
-        tool_results = self._invoke_tools(dashboard)
-        trace(self.name, "tool_done", f"{len(tool_results)} tool result(s) received")
-        tool_text = self._format_tool_outputs(tool_results)
+    def challenge(self, dashboard, verdicts):
+        """Phase 2a: review all Phase 1 verdicts as devil's advocate."""
+        trace(self.name, "tool_call", f"Running tools: {', '.join(self.tools)}")
+        tool_results = self.run_tools(dashboard)
+        tool_text = self._format_tool_text(tool_results)
 
-        verdicts_summary = format_verdicts_summary(verdicts)
+        verdicts_text = format_verdicts_summary(verdicts)
 
         tool_section = ""
         if tool_text:
             tool_section = (
-                "\n\n## Pre-Computed Analysis (from your tools)\n"
-                "Use these results to ground your critique in hard data.\n\n"
+                "\n\n## Pre-Computed Analysis\n"
+                "Use these to ground your critique in data.\n\n"
                 + tool_text
             )
 
         prompt = textwrap.dedent(f"""\
-            All domain agents have submitted their independent verdicts for the
-            launch decision.  Review their assessments critically.
+            All agents have submitted their independent verdicts.
+            Review them critically.
 
             ## Agent Verdicts
-            {verdicts_summary}
+            {verdicts_text}
 
             ## Dashboard Data
             ```json
@@ -357,21 +277,17 @@ class RiskCriticAgent(BaseAgent):
             {tool_section}
 
             Your job:
-            1. Challenge the assumptions and reasoning of each agent.
-            2. Identify blind spots, biases (sunk-cost, anchoring, confirmation),
-               and risks the group may be overlooking.
-            3. Highlight worst-case scenarios and tail risks.
-            4. Request additional evidence where claims are unsubstantiated.
-            5. Produce your own verdict — you may agree or disagree with the
-               majority.
+            1. Challenge each agent's assumptions and reasoning.
+            2. Identify blind spots, biases, and overlooked risks.
+            3. Highlight worst-case scenarios.
+            4. Produce your own verdict (you may agree or disagree).
 
-            Produce your verdict as a JSON object:
-            {_VERDICT_SCHEMA}
+            Produce your verdict as JSON:
+            {VERDICT_SCHEMA}
         """)
 
-        trace(self.name, "llm_call", "Reviewing Phase 1 verdicts critically")
-        response = _llm_call_with_retry(
-            self.client,
+        trace(self.name, "llm_call", "Critiquing Phase 1 verdicts")
+        resp = self.client.chat.completions.create(
             model=self.model,
             temperature=0.4,
             messages=[
@@ -379,15 +295,13 @@ class RiskCriticAgent(BaseAgent):
                 {"role": "user", "content": prompt},
             ],
         )
-        raw = response.choices[0].message.content
-        verdict = _parse_verdict(raw, self.name, self.role)
-        trace(self.name, "verdict", f"{verdict.decision.value} (confidence: {verdict.confidence:.0%})")
+        raw = resp.choices[0].message.content
+        verdict = parse_verdict(raw, self.name, self.role)
+        trace(self.name, "verdict", f"{verdict.decision.value} ({verdict.confidence:.0%})")
         return verdict
 
 
-# ── Registry ────────────────────────────────────────────────────────────────
-
-PHASE1_AGENTS: list[type[BaseAgent]] = [
+PHASE1_AGENTS = [
     ProductManagerAgent,
     DataAnalystAgent,
     MarketingCommsAgent,

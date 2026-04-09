@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .agents import (
     PHASE1_AGENTS, RiskCriticAgent, BaseAgent,
-    format_verdicts_summary, _llm_call_with_retry,
+    format_verdicts_summary,
 )
 from .models import AgentVerdict, Decision, WarRoomOutcome
 from .trace import trace, reset_trace, get_trace
@@ -198,8 +198,7 @@ class WarRoom:
             {schema}
         """)
 
-        response = _llm_call_with_retry(
-            self.client,
+        response = self.client.chat.completions.create(
             model=self.model,
             temperature=0.2,
             messages=[

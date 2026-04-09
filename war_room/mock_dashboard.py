@@ -16,7 +16,7 @@ from pathlib import Path
 
 # ── Resolve data directory relative to project root ─────────────────────────
 
-_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 FEATURE_NAME = "Smart Compose 2.0"
 ROLLOUT_SCHEDULE = "5% → 10% → 25% → 50% staged rollout over 10 days"
@@ -26,38 +26,39 @@ TOTAL_USER_BASE = 520_000
 
 # ── CSV helpers ─────────────────────────────────────────────────────────────
 
-def _auto_cast(value: str):
-    """Cast a CSV string to int, float, or None where appropriate."""
-    if value == "" or value is None:
-        return None
-    try:
-        f = float(value)
-        return int(f) if f == int(f) and "." not in value else f
-    except (ValueError, OverflowError):
-        return value
-
-
-def _read_csv_rows(filename: str) -> list[dict]:
+def read_csv_rows(filename):
     """Read a CSV file from data/ and return a list of dicts with auto-cast values."""
-    path = _DATA_DIR / filename
+    path = DATA_DIR / filename
     with open(path, newline="", encoding="utf-8") as fh:
-        reader = csv.DictReader(fh)
-        return [{k: _auto_cast(v) for k, v in row.items()} for row in reader]
+        rows = []
+        for row in csv.DictReader(fh):
+            typed = {}
+            for k, v in row.items():
+                if v == "" or v is None:
+                    typed[k] = None
+                else:
+                    try:
+                        f = float(v)
+                        typed[k] = int(f) if f == int(f) and "." not in v else f
+                    except (ValueError, OverflowError):
+                        typed[k] = v
+            rows.append(typed)
+        return rows
 
 
-def _read_text(filename: str) -> str:
+def read_text(filename: str) -> str:
     """Read a plain-text / markdown file from data/."""
-    path = _DATA_DIR / filename
+    path = DATA_DIR / filename
     with open(path, encoding="utf-8") as fh:
         return fh.read()
 
 
 # ── Load input data from CSV / Markdown ─────────────────────────────────────
 
-DAILY_METRICS: list[dict] = _read_csv_rows("daily_metrics.csv")
-USER_FEEDBACK: list[dict] = _read_csv_rows("user_feedback.csv")
-KNOWN_ISSUES:  list[dict] = _read_csv_rows("known_issues.csv")
-RELEASE_NOTES: str        = _read_text("release_notes.md")
+DAILY_METRICS: list[dict] = read_csv_rows("daily_metrics.csv")
+USER_FEEDBACK: list[dict] = read_csv_rows("user_feedback.csv")
+KNOWN_ISSUES:  list[dict] = read_csv_rows("known_issues.csv")
+RELEASE_NOTES: str        = read_text("release_notes.md")
 
 
 # ── Reference constants ─────────────────────────────────────────────────────
