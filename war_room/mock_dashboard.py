@@ -65,18 +65,14 @@ RELEASE_NOTES: str        = _read_text("release_notes.md")
 # Pre-launch baselines (7-day averages + survey scores)
 BASELINE_METRICS: dict = {
     "signup_conversion_pct": 4.4,
-    "avg_dau": 26000,
-    "avg_wau": 185000,
     "retention_d1_pct": 73.0,
     "retention_d7_pct": 45.0,
     "crash_rate_pct": 0.35,
     "p95_latency_ms": 195,
     "payment_success_pct": 99.7,
     "avg_support_tickets_per_day": 38,
-    "feature_funnel_completion_pct": None,   # new feature — no baseline
-    "avg_churn_cancellations_per_day": 10,
-    "nps": 42,                               # pre-launch NPS
-    "csat": 4.1,                             # pre-launch CSAT (out of 5)
+    "nps": 42,
+    "csat": 4.1,
 }
 
 # PM-defined success criteria (thresholds)
@@ -88,8 +84,7 @@ SUCCESS_CRITERIA: dict = {
     "min_retention_d7_pct": 42.0,
     "min_payment_success_pct": 99.0,
     "max_support_tickets_per_day": 80,
-    "min_feature_funnel_completion_pct": 20.0,
-    "min_nps_delta": -5,
+    "min_nps": 35,
     "min_csat": 3.8,
 }
 

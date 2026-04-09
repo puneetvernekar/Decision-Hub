@@ -3,15 +3,15 @@
 
 # Each metric: (criteria_key, "max"|"min"|None, baseline_key, lower_is_better)
 METRIC_CONFIG = {
-    "crash_rate_pct":               ("max_crash_rate_pct",              "max", "crash_rate_pct",               True),
-    "p95_latency_ms":               ("max_p95_latency_ms",             "max", "p95_latency_ms",               True),
-    "signup_conversion_pct":        ("min_signup_conversion_pct",      "min", "signup_conversion_pct",        False),
-    "retention_d1_pct":             ("min_retention_d1_pct",           "min", "retention_d1_pct",             False),
-    "retention_d7_pct":             ("min_retention_d7_pct",           "min", "retention_d7_pct",             False),
-    "payment_success_pct":          ("min_payment_success_pct",        "min", "payment_success_pct",          False),
-    "support_tickets":              ("max_support_tickets_per_day",    "max", "avg_support_tickets_per_day",  True),
-    "feature_funnel_completion_pct": ("min_feature_funnel_completion_pct", "min", "feature_funnel_completion_pct", False),
-    "churn_cancellations":          (None,                              None, "avg_churn_cancellations_per_day", True),
+    "crash_rate_pct":        ("max_crash_rate_pct",         "max", "crash_rate_pct",              True),
+    "p95_latency_ms":        ("max_p95_latency_ms",         "max", "p95_latency_ms",              True),
+    "signup_conversion_pct": ("min_signup_conversion_pct",  "min", "signup_conversion_pct",       False),
+    "retention_d1_pct":      ("min_retention_d1_pct",       "min", "retention_d1_pct",            False),
+    "retention_d7_pct":      ("min_retention_d7_pct",       "min", "retention_d7_pct",            False),
+    "payment_success_pct":   ("min_payment_success_pct",    "min", "payment_success_pct",         False),
+    "support_tickets":       ("max_support_tickets_per_day","max", "avg_support_tickets_per_day", True),
+    "nps":                   ("min_nps",                    "min", "nps",                         False),
+    "csat":                  ("min_csat",                   "min", "csat",                        False),
 }
 
 THEME_KEYWORDS = {

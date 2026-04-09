@@ -245,7 +245,7 @@ class ProductManagerAgent(BaseAgent):
         • Assess user impact — both positive adoption signals and negative friction.
         • Frame the go / no-go decision from a product perspective.
         • Weigh short-term pain against long-term strategic value.
-        • Evaluate the feature adoption funnel, retention (D1/D7), and churn trends.
+        • Evaluate retention (D1/D7), NPS, and CSAT trends.
         • Consider the release notes and known issues in your assessment.
 
         Be data-driven but also consider qualitative user sentiment.
@@ -263,9 +263,9 @@ class DataAnalystAgent(BaseAgent):
         You are the Data Analyst in a product-launch war room.
         Your responsibilities:
         • Perform quantitative analysis of the 10-day daily metric trends.
-        • Analyse all 9 metric dimensions: signup conversion, DAU/WAU, D1/D7
-          retention, crash rate, p95 latency, payment success rate, support
-          ticket volume, feature funnel completion, and churn/cancellations.
+        • Analyse all 9 metric dimensions: crash rate, p95 latency, signup
+          conversion, D1/D7 retention, payment success rate, support ticket
+          volume, NPS, and CSAT.
         • Identify anomalies, inflection points, and statistically meaningful shifts.
         • Compare current metrics to baseline and success criteria thresholds.
         • Assess whether trends are worsening, stabilising, or recovering.
