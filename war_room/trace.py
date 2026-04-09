@@ -2,23 +2,23 @@
 
 import time
 
-_log = []
-_t0 = 0.0
+log_list = []
+start_time = 0.0
 
 
 def reset_trace():
-    global _log, _t0
-    _log = []
-    _t0 = time.monotonic()
+    global log_list, start_time
+    log_list = []
+    start_time = time.monotonic()
 
 
 def trace(source, event, detail):
-    if not _t0:
+    if not start_time:
         reset_trace()
 
-    elapsed = time.monotonic() - _t0
-    step = len(_log) + 1
-    _log.append({
+    elapsed = time.monotonic() - start_time
+    step = len(log_list) + 1
+    log_list.append({
         "step": step, "elapsed_s": round(elapsed, 3),
         "source": source, "event": event, "detail": detail,
     })
@@ -27,4 +27,4 @@ def trace(source, event, detail):
 
 def get_trace():
     """Returns a copy so callers can't mess with the internal list."""
-    return list(_log)
+    return list(log_list)
