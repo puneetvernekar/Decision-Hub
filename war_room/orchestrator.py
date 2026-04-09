@@ -6,8 +6,6 @@ Phase 2 — Risk/Critic challenges (2a) + agents revise their verdicts (2b, para
 Phase 3 — Director / Senior PM synthesises the final go/no-go decision
 """
 
-from __future__ import annotations
-
 import json
 import textwrap
 from concurrent.futures import ThreadPoolExecutor, as_completed

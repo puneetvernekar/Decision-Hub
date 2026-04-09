@@ -1,12 +1,7 @@
 # Tools that agents call before the LLM to process raw dashboard data.
 
-from __future__ import annotations
 
-import math
-from typing import Any
-
-
-# Unified metric config: (criteria_key, "max"|"min"|None, baseline_key, lower_is_better)
+# Each metric: (criteria_key, "max"|"min"|None, baseline_key, lower_is_better)
 METRIC_CONFIG = {
     "crash_rate_pct":               ("max_crash_rate_pct",              "max", "crash_rate_pct",               True),
     "p95_latency_ms":               ("max_p95_latency_ms",             "max", "p95_latency_ms",               True),
@@ -34,21 +29,9 @@ THEME_KEYWORDS = {
 HIGH_IMPACT_CHANNELS = {"reddit", "twitter", "app_store"}
 HIGH_IMPACT_SIGNALS = ["reddit", "twitter", "psa", "app store", "data loss", "embarrass"]
 
-# Trend comparison config: (metric_key, baseline_key, polarity)
-TREND_CONFIGS = [
-    ("crash_rate_pct",               "crash_rate_pct",                  "lower_is_better"),
-    ("p95_latency_ms",               "p95_latency_ms",                  "lower_is_better"),
-    ("signup_conversion_pct",        "signup_conversion_pct",           "higher_is_better"),
-    ("retention_d1_pct",             "retention_d1_pct",                "higher_is_better"),
-    ("retention_d7_pct",             "retention_d7_pct",                "higher_is_better"),
-    ("payment_success_pct",          "payment_success_pct",             "higher_is_better"),
-    ("support_tickets",              "avg_support_tickets_per_day",     "lower_is_better"),
-    ("churn_cancellations",          "avg_churn_cancellations_per_day", "lower_is_better"),
-]
 
-
-def aggregate_metrics(dashboard: dict) -> dict[str, Any]:
-    """Per-metric summary with trend direction and threshold breach checks."""
+def aggregate_metrics(dashboard):
+    """Summarizes each metric: latest value, trend, threshold breach, baseline delta."""
     daily = dashboard["daily_metrics"]
     baseline = dashboard["baseline_metrics"]
     criteria = dashboard["success_criteria"]
@@ -56,49 +39,52 @@ def aggregate_metrics(dashboard: dict) -> dict[str, Any]:
     summaries = {}
     breaching = 0
 
-    for metric, (crit_key, crit_type, bl_key, lower_better) in METRIC_CONFIG.items():
+    for metric, (criteria_key, criteria_type, baseline_key, lower_is_better) in METRIC_CONFIG.items():
         values = [d[metric] for d in daily if d.get(metric) is not None]
         if not values:
             continue
 
         latest = values[-1]
-        mn, mx = min(values), max(values)
         avg = sum(values) / len(values)
 
-        # Trend: compare first-3 vs last-3 day averages
+        # simple trend: compare first-3 vs last-3 day averages
+        trend = "insufficient_data"
         if len(values) >= 6:
             early = sum(values[:3]) / 3
             late = sum(values[-3:]) / 3
-            if lower_better:
-                trend = "improving" if late < early else ("worsening" if late > early else "stable")
+            if abs(late - early) < 0.01:
+                trend = "stable"
+            elif (late < early) == lower_is_better:
+                trend = "improving"
             else:
-                trend = "improving" if late > early else ("worsening" if late < early else "stable")
-        else:
-            trend = "insufficient_data"
+                trend = "worsening"
 
-        # Check if latest value breaches the threshold
+        # threshold breach check
         breached = False
-        threshold = None
-        if crit_key and crit_type:
-            threshold = criteria.get(crit_key)
-            if threshold is not None:
-                if crit_type == "max" and latest > threshold:
-                    breached = True
-                elif crit_type == "min" and latest < threshold:
-                    breached = True
+        threshold = criteria.get(criteria_key) if criteria_key else None
+        if threshold is not None:
+            if criteria_type == "max" and latest > threshold:
+                breached = True
+            elif criteria_type == "min" and latest < threshold:
+                breached = True
             if breached:
                 breaching += 1
 
-        bl_val = baseline.get(bl_key) if bl_key else None
-        delta_pct = (
-            round(((latest - bl_val) / bl_val) * 100, 1)
-            if bl_val not in (None, 0) else None
-        )
+        baseline_val = baseline.get(baseline_key) if baseline_key else None
+        delta_pct = None
+        if baseline_val not in (None, 0):
+            delta_pct = round(((latest - baseline_val) / baseline_val) * 100, 1)
 
         summaries[metric] = {
-            "latest": latest, "min": mn, "max": mx, "mean": round(avg, 2),
-            "trend": trend, "threshold": threshold, "breached": breached,
-            "baseline": bl_val, "delta_from_baseline_pct": delta_pct,
+            "latest": latest,
+            "min": min(values),
+            "max": max(values),
+            "mean": round(avg, 2),
+            "trend": trend,
+            "threshold": threshold,
+            "breached": breached,
+            "baseline": baseline_val,
+            "delta_from_baseline_pct": delta_pct,
         }
 
     health = "healthy" if breaching == 0 else ("degraded" if breaching <= 2 else "critical")
@@ -110,101 +96,57 @@ def aggregate_metrics(dashboard: dict) -> dict[str, Any]:
     }
 
 
-def detect_anomalies(dashboard: dict, *, z_threshold: float = 2.0) -> dict[str, Any]:
-    """Z-score anomaly detection across daily metric time-series."""
-    daily = dashboard["daily_metrics"]
-    anomalies = []
-
-    # skip feature_funnel_completion_pct — no meaningful baseline for z-score on a new feature
-    skip = {"feature_funnel_completion_pct"}
-
-    for metric in METRIC_CONFIG:
-        if metric in skip:
-            continue
-
-        values = [(d["day"], d[metric]) for d in daily if d.get(metric) is not None]
-        if len(values) < 3:
-            continue
-
-        nums = [v for _, v in values]
-        mean = sum(nums) / len(nums)
-        variance = sum((x - mean) ** 2 for x in nums) / len(nums)
-        std = math.sqrt(variance)
-        if std == 0:
-            continue
-
-        for day, val in values:
-            z = abs(val - mean) / std
-            if z >= z_threshold:
-                anomalies.append({
-                    "metric": metric, "day": day, "value": val,
-                    "mean": round(mean, 2), "std_dev": round(std, 2),
-                    "z_score": round(z, 2),
-                    "direction": "spike" if val > mean else "drop",
-                    "severity": "high" if z >= 3.0 else "medium",
-                })
-
-    anomalies.sort(key=lambda a: (-{"high": 2, "medium": 1}[a["severity"]], -a["z_score"]))
-    return {"anomalies": anomalies, "total_anomalies": len(anomalies)}
-
-
-def summarize_sentiment(dashboard: dict) -> dict[str, Any]:
-    """Breaks down user feedback by channel, theme, and timeline."""
+def summarize_sentiment(dashboard):
+    """Counts sentiment by channel, extracts themes, flags high-impact items."""
     feedback = dashboard["user_feedback"]
 
-    by_channel = {}
-    by_sentiment = {"positive": 0, "negative": 0, "neutral": 0, "mixed": 0}
+    channel_counts = {}
+    sentiment_counts = {"positive": 0, "negative": 0, "neutral": 0, "mixed": 0}
     themes = {}
-    timeline = {}
     high_impact = []
 
     for entry in feedback:
         channel = entry.get("channel", "unknown")
         sentiment = entry.get("sentiment", "neutral")
-        day = entry.get("day", 0)
         text = entry.get("feedback_text", "")
+        day = entry.get("day", 0)
 
-        if channel not in by_channel:
-            by_channel[channel] = {"positive": 0, "negative": 0, "neutral": 0, "mixed": 0, "total": 0}
-        by_channel[channel][sentiment] = by_channel[channel].get(sentiment, 0) + 1
-        by_channel[channel]["total"] += 1
+        # count by channel
+        if channel not in channel_counts:
+            channel_counts[channel] = {"positive": 0, "negative": 0, "neutral": 0, "mixed": 0, "total": 0}
+        channel_counts[channel][sentiment] = channel_counts[channel].get(sentiment, 0) + 1
+        channel_counts[channel]["total"] += 1
+        sentiment_counts[sentiment] = sentiment_counts.get(sentiment, 0) + 1
 
-        by_sentiment[sentiment] = by_sentiment.get(sentiment, 0) + 1
-
-        if day not in timeline:
-            timeline[day] = {"positive": 0, "negative": 0, "neutral": 0, "mixed": 0}
-        timeline[day][sentiment] = timeline[day].get(sentiment, 0) + 1
-
-        # match feedback text against known themes
+        # keyword theme matching
         text_lower = text.lower()
         for theme, keywords in THEME_KEYWORDS.items():
             if any(kw in text_lower for kw in keywords):
                 themes[theme] = themes.get(theme, 0) + 1
 
-        # flag high-impact items (viral risk channels + sensitive keywords)
-        if any(sig in text_lower for sig in HIGH_IMPACT_SIGNALS):
-            if channel in HIGH_IMPACT_CHANNELS:
+        # flag stuff from high-reach channels that mentions sensitive topics
+        if channel in HIGH_IMPACT_CHANNELS:
+            if any(sig in text_lower for sig in HIGH_IMPACT_SIGNALS):
                 high_impact.append({
                     "day": day, "channel": channel,
                     "sentiment": sentiment, "snippet": text[:120],
                 })
 
     total = max(len(feedback), 1)
-    net_score = round((by_sentiment["positive"] - by_sentiment["negative"]) / total, 2)
+    net_score = round((sentiment_counts["positive"] - sentiment_counts["negative"]) / total, 2)
 
     return {
         "total_feedback": len(feedback),
-        "sentiment_breakdown": by_sentiment,
-        "by_channel": by_channel,
+        "sentiment_breakdown": sentiment_counts,
+        "by_channel": channel_counts,
         "top_themes": dict(sorted(themes.items(), key=lambda x: -x[1])),
-        "sentiment_timeline": dict(sorted(timeline.items())),
         "high_impact_items": high_impact[:10],
         "net_sentiment_score": net_score,
     }
 
 
-def compare_trends(dashboard: dict) -> dict[str, Any]:
-    """Compares current metrics to baseline with velocity and recovery ETA."""
+def compare_trends(dashboard):
+    """Simple baseline comparison: latest value vs pre-launch baseline for each metric."""
     daily = dashboard["daily_metrics"]
     baseline = dashboard["baseline_metrics"]
 
@@ -212,51 +154,36 @@ def compare_trends(dashboard: dict) -> dict[str, Any]:
     improving = 0
     worsening = 0
 
-    for metric_key, baseline_key, polarity in TREND_CONFIGS:
-        values = [d[metric_key] for d in daily if d.get(metric_key) is not None]
+    for metric, (_, _, baseline_key, lower_is_better) in METRIC_CONFIG.items():
+        values = [d[metric] for d in daily if d.get(metric) is not None]
         if len(values) < 2:
             continue
 
-        bl_val = baseline.get(baseline_key)
+        baseline_val = baseline.get(baseline_key)
+        if baseline_val is None:
+            continue
+
         latest = values[-1]
+        delta = round(latest - baseline_val, 2)
+        delta_pct = round((delta / baseline_val) * 100, 1) if baseline_val != 0 else None
 
-        # 3-day moving average velocity
-        if len(values) >= 6:
-            recent_avg = sum(values[-3:]) / 3
-            earlier_avg = sum(values[-6:-3]) / 3
-            velocity = round(recent_avg - earlier_avg, 2)
-        else:
-            velocity = 0.0
-
-        if abs(velocity) < 0.01:
+        # is it getting better or worse vs baseline?
+        if abs(delta) < 0.01:
             direction = "stable"
-        elif (velocity > 0 and polarity == "higher_is_better") or \
-             (velocity < 0 and polarity == "lower_is_better"):
+        elif (delta < 0) == lower_is_better:
             direction = "improving"
             improving += 1
         else:
             direction = "worsening"
             worsening += 1
 
-        # rough linear extrapolation: how many days to get back to baseline
-        days_to_baseline = None
-        if bl_val is not None and velocity != 0:
-            gap = (latest - bl_val) if polarity == "lower_is_better" else (bl_val - latest)
-            if gap > 0:
-                daily_rate = abs(velocity) / 3
-                if daily_rate > 0:
-                    days_to_baseline = round(gap / daily_rate, 1)
-
-        delta = round(latest - bl_val, 2) if bl_val is not None else None
-        delta_pct = (
-            round(((latest - bl_val) / bl_val) * 100, 1)
-            if bl_val not in (None, 0) else None
-        )
-
         comparisons.append({
-            "metric": metric_key, "latest": latest, "baseline": bl_val,
-            "delta": delta, "delta_pct": delta_pct, "direction": direction,
-            "velocity_per_3d": velocity, "projected_days_to_baseline": days_to_baseline,
+            "metric": metric,
+            "latest": latest,
+            "baseline": baseline_val,
+            "delta": delta,
+            "delta_pct": delta_pct,
+            "direction": direction,
         })
 
     return {
@@ -272,16 +199,12 @@ TOOL_REGISTRY = {
         "fn": aggregate_metrics,
         "description": "Per-metric stats, trend direction, threshold breach flags, overall health.",
     },
-    "detect_anomalies": {
-        "fn": detect_anomalies,
-        "description": "Z-score anomaly detection across daily metrics. Returns spikes/drops with severity.",
-    },
     "summarize_sentiment": {
         "fn": summarize_sentiment,
-        "description": "Channel/theme/timeline breakdown of user feedback with high-impact detection.",
+        "description": "Sentiment counts by channel, theme extraction, high-impact item flags.",
     },
     "compare_trends": {
         "fn": compare_trends,
-        "description": "Baseline deltas, 3-day velocity, direction, and recovery time estimate.",
+        "description": "Latest value vs baseline for each metric with direction.",
     },
 }

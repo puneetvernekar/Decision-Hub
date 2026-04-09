@@ -11,8 +11,6 @@ Reference constants (baselines, KPIs, success criteria) are defined
 below — they frame how the agents interpret the data.
 """
 
-from __future__ import annotations
-
 import csv
 from pathlib import Path
 

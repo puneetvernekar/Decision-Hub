@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 import re
 import textwrap
@@ -264,7 +262,7 @@ class ProductManagerAgent(BaseAgent):
 class DataAnalystAgent(BaseAgent):
     name = "Data Analyst"
     role = "data_analyst"
-    tools = ["aggregate_metrics", "detect_anomalies"]
+    tools = ["aggregate_metrics"]
     system_prompt = textwrap.dedent("""\
         You are the Data Analyst in a product-launch war room.
         Your responsibilities:
@@ -314,7 +312,7 @@ class MarketingCommsAgent(BaseAgent):
 class RiskCriticAgent(BaseAgent):
     name = "Risk / Critic"
     role = "risk_critic"
-    tools = ["detect_anomalies", "aggregate_metrics"]
+    tools = ["aggregate_metrics"]
     system_prompt = textwrap.dedent("""\
         You are the Risk Analyst and Devil's Advocate in a product-launch war room.
         Your responsibilities:
