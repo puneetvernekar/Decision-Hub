@@ -1,12 +1,3 @@
-"""
-Agent definitions for the war-room multi-agent system.
-
-Phase 1 agents (PM, Data Analyst, Marketing/Comms) analyse the dashboard
-independently.  The Risk/Critic agent operates in Phase 2a — it reviews
-all Phase 1 verdicts and produces a challenge.  Phase 2b lets the original
-agents revise after seeing peers' verdicts and the critique.
-"""
-
 from __future__ import annotations
 
 import json
@@ -72,11 +63,15 @@ def _parse_verdict(raw: str, agent_name: str, role: str) -> AgentVerdict:
     if start == -1 or end == 0:
         raise ValueError(f"No JSON object found in {agent_name} response")
     payload = json.loads(raw[start:end])
+    confidence = float(payload["confidence"])
+    if confidence > 1.0:
+        confidence = confidence / 100.0
+    confidence = max(0.0, min(1.0, confidence))
     return AgentVerdict(
         agent_name=agent_name,
         role=role,
         decision=Decision(payload["decision"]),
-        confidence=float(payload["confidence"]),
+        confidence=confidence,
         rationale=payload["rationale"],
         key_evidence=payload["key_evidence"],
         recommended_actions=payload["recommended_actions"],
