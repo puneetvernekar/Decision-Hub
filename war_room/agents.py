@@ -2,10 +2,6 @@ import json
 import re
 import textwrap
 import time
-from typing import Any, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from openai import OpenAI
 
 from .models import AgentVerdict, Decision
 from .tools import TOOL_REGISTRY
@@ -16,7 +12,7 @@ from .trace import trace
 _MAX_RETRIES = 5
 
 
-def _llm_call_with_retry(client: Any, **kwargs) -> Any:
+def _llm_call_with_retry(client, **kwargs):
     """Call ``client.chat.completions.create`` with automatic retry on 429.
 
     Parses the retry delay from the error message when available and falls
@@ -100,21 +96,21 @@ class BaseAgent:
     system_prompt: str = ""
     tools: list[str] = []   # tool names from TOOL_REGISTRY
 
-    def __init__(self, client: OpenAI, model: str = "gpt-4o"):
+    def __init__(self, client, model="gpt-4o"):
         self.client = client
         self.model = model
-        self.last_tool_results: dict[str, Any] = {}  # filled by _invoke_tools
+        self.last_tool_results = {}  # filled by _invoke_tools
 
     # ── Tool invocation machinery ───────────────────────────────────────
 
-    def _invoke_tools(self, dashboard: dict) -> dict[str, Any]:
+    def _invoke_tools(self, dashboard):
         """Programmatically call every tool listed in ``self.tools``.
 
         Returns a dict mapping tool name → structured result.
         Also stores results in ``self.last_tool_results`` so the
         orchestrator can log which tools were invoked.
         """
-        results: dict[str, Any] = {}
+        results = {}
         for tool_name in self.tools:
             entry = TOOL_REGISTRY[tool_name]
             results[tool_name] = entry["fn"](dashboard)
@@ -122,7 +118,7 @@ class BaseAgent:
         return results
 
     @staticmethod
-    def _format_tool_outputs(tool_results: dict[str, Any]) -> str:
+    def _format_tool_outputs(tool_results) -> str:
         """Render tool outputs as labelled JSON blocks for the LLM prompt."""
         if not tool_results:
             return ""
