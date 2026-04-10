@@ -15,7 +15,7 @@ from .agents import (
     format_verdicts_summary,
 )
 from .models import AgentVerdict, Decision, WarRoomOutcome
-from .trace import trace, reset_trace, get_trace
+from .trace import trace, reset_trace, get_trace, log_verdict, log_outcome
 
 
 class WarRoom:
@@ -265,6 +265,8 @@ class WarRoom:
             print("─" * 60)
         initial_verdicts, p1_agents = self._phase1_analyze(dashboard)
         trace("orchestrator", "phase_end", f"Phase 1 complete — {len(initial_verdicts)} verdicts collected")
+        for v in initial_verdicts:
+            log_verdict(f"Phase 1 — {v.agent_name}", v)
         if verbose:
             self._log_tools(p1_agents)
             for v in initial_verdicts:
@@ -280,6 +282,7 @@ class WarRoom:
             print("─" * 60)
         critique, critic_agent = self._phase2a_critique(dashboard, initial_verdicts)
         trace("orchestrator", "phase_end", f"Phase 2a complete — critique: {critique.decision.value}")
+        log_verdict("Phase 2a — Risk/Critic", critique)
         if verbose:
             self._log_tools([critic_agent])
             print(f"\n  [Risk / Critic]  →  {critique.decision.value}  "
@@ -294,6 +297,8 @@ class WarRoom:
             print("─" * 60)
         revised_verdicts = self._phase2b_revise(dashboard, initial_verdicts, critique)
         trace("orchestrator", "phase_end", f"Phase 2b complete — {len(revised_verdicts)} revised verdicts")
+        for v in revised_verdicts:
+            log_verdict(f"Phase 2b — {v.agent_name} (revised)", v)
         if verbose:
             for v in revised_verdicts:
                 init = next((i for i in initial_verdicts if i.role == v.role), None)
@@ -313,4 +318,5 @@ class WarRoom:
         outcome = self._phase3_synthesize(initial_verdicts, critique, revised_verdicts)
         trace("orchestrator", "phase_end", f"Phase 3 complete — decision: {outcome.final_decision.value}")
         trace("orchestrator", "session", "War-room session complete")
+        log_outcome(outcome)
         return outcome

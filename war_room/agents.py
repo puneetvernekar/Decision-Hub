@@ -60,7 +60,7 @@ def format_verdicts_summary(verdicts):
     return "\n\n".join(parts)
 
 
-# -- Base agent --
+#--Base agent--
 
 class BaseAgent:
     """Base class all war-room agents inherit from."""
