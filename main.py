@@ -179,17 +179,12 @@ def main() -> None:
     # Defaults come from .env → env vars → CLI overrides
     env_model = os.environ.get("LLM_MODEL", "gpt-4o")
     env_parallel = int(os.environ.get("MAX_PARALLEL_AGENTS", "3"))
-    env_output = os.environ.get("OUTPUT_JSON_PATH", "war_room_outcome.json")
+    env_output = os.environ.get("OUTPUT_JSON_PATH", "decision_hub_output.json")
 
     parser = argparse.ArgumentParser(description="War Room — Launch Decision System")
     parser.add_argument(
         "--model", default=env_model,
         help=f"LLM model name (default from .env: {env_model})",
-    )
-    parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Also dump the full outcome as JSON to the output path",
     )
     args = parser.parse_args()
 
@@ -210,23 +205,22 @@ def main() -> None:
 
     _print_outcome(outcome)
 
-    if args.json:
-        out_path = env_output
-        payload = {
-            "final_decision": outcome.final_decision.value,
-            "decision_rationale": outcome.decision_rationale,
-            "confidence_score": outcome.confidence_score,
-            "confidence_drivers": outcome.confidence_drivers,
-            "final_verdicts": [_verdict_to_dict(v) for v in outcome.revised_verdicts],
-            "action_plan": outcome.action_plan,
-            "risks_and_mitigations": outcome.risks_and_mitigations,
-            "communication_plan": outcome.communication_plan,
-            "follow_up_monitoring": outcome.follow_up_monitoring,
-            "dissenting_opinions": outcome.dissenting_opinions,
-        }
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
-        print(f"\n  📄 Full outcome written to {out_path}")
+    out_path = env_output
+    payload = {
+        "final_decision": outcome.final_decision.value,
+        "decision_rationale": outcome.decision_rationale,
+        "confidence_score": outcome.confidence_score,
+        "confidence_drivers": outcome.confidence_drivers,
+        "final_verdicts": [_verdict_to_dict(v) for v in outcome.revised_verdicts],
+        "action_plan": outcome.action_plan,
+        "risks_and_mitigations": outcome.risks_and_mitigations,
+        "communication_plan": outcome.communication_plan,
+        "follow_up_monitoring": outcome.follow_up_monitoring,
+        "dissenting_opinions": outcome.dissenting_opinions,
+    }
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    print(f"\n  Full outcome written to {out_path}")
 
 
 if __name__ == "__main__":
