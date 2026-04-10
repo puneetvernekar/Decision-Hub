@@ -6,15 +6,11 @@ Phase 2 — Risk/Critic challenges (2a) + agents revise their verdicts (2b, para
 Phase 3 — Director / Senior PM synthesises the final go/no-go decision
 """
 
-import json
-import textwrap
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .agents import (
-    PHASE1_AGENTS, RiskCriticAgent, BaseAgent,
-    format_verdicts_summary,
+    PHASE1_AGENTS, RiskCriticAgent, DirectorAgent, BaseAgent,
 )
-from .models import AgentVerdict, Decision, WarRoomOutcome
 from .trace import trace, reset_trace, get_trace, log_verdict, log_outcome
 
 
@@ -113,128 +109,14 @@ class WarRoom:
 
         return revised
 
-    # ── Phase 3: Director / Senior PM synthesis ─────────────────────────
+    # -- Phase 3: Director synthesis --
 
     def _phase3_synthesize(self, initial_verdicts, critique, revised_verdicts):
-        """Director / Senior PM makes the final go/no-go decision."""
+        """Director makes the final go/no-go decision."""
+        director = DirectorAgent(self.client, self.model)
+        return director.synthesize(initial_verdicts, critique, revised_verdicts)
 
-        initial_summary = format_verdicts_summary(initial_verdicts)
-        critique_summary = format_verdicts_summary([critique])
-        revised_summary = format_verdicts_summary(revised_verdicts)
-
-        # Detect who changed position during deliberation
-        changes = []
-        for init in initial_verdicts:
-            for rev in revised_verdicts:
-                if init.role == rev.role:
-                    if init.decision != rev.decision or abs(init.confidence - rev.confidence) > 0.03:
-                        changes.append(
-                            f"{init.agent_name}: {init.decision.value} ({init.confidence:.0%}) "
-                            f"→ {rev.decision.value} ({rev.confidence:.0%})"
-                        )
-        changes_text = "\n".join(changes) if changes else "No agents changed their position."
-
-        schema = textwrap.dedent("""\
-        {
-          "final_decision": "Proceed | Pause | Roll Back",
-          "decision_rationale": "... (reference specific metrics and feedback)",
-          "confidence_score": 0.0-1.0,
-          "confidence_drivers": [
-            "What would INCREASE confidence: ...",
-            "What would DECREASE confidence: ..."
-          ],
-          "action_plan": [
-            {"action": "...", "owner": "Engineering | PM | Marketing | Support | Leadership", "timeframe": "IMMEDIATE | WITHIN 24h | WITHIN 48h | ..."}
-          ],
-          "risks_and_mitigations": [
-            {"risk": "...", "likelihood": "high|medium|low", "impact": "high|medium|low", "mitigation": "..."}
-          ],
-          "communication_plan": {
-            "internal": ["message / action for internal stakeholders", ...],
-            "external": ["message / action for users / public", ...]
-          },
-          "follow_up_monitoring": ["metric to watch", ...],
-          "dissenting_opinions": ["...", ...]
-        }""")
-
-        prompt = textwrap.dedent(f"""\
-            You are the Director of Product / Senior PM making the final launch
-            decision in a war-room session.  You have authority to make the
-            go/no-go call after hearing all perspectives.
-
-            ## Phase 1 — Initial Verdicts
-            {initial_summary}
-
-            ## Phase 2a — Risk/Critic's Challenges
-            {critique_summary}
-
-            ## Phase 2b — Revised Verdicts (after deliberation)
-            {revised_summary}
-
-            ## Position Changes During Deliberation
-            {changes_text}
-
-            Using all of the above, produce the FINAL war-room decision.
-            Rules:
-            • The decision must be exactly one of: Proceed, Pause, Roll Back.
-            • Weight higher-confidence verdicts and data-backed reasoning more.
-            • If agents are evenly split, lean toward caution (Pause > Proceed).
-            • Before deciding, identify the strongest argument AGAINST the
-              majority position and explain why it does or doesn't change
-              your conclusion.
-            • The decision_rationale MUST reference specific metric values
-              and feedback themes that drove the decision.
-            • confidence_score: your overall confidence in the decision (0–1).
-            • confidence_drivers: list what evidence would raise or lower
-              your confidence (e.g., "KI-001 fix confirmed → +0.15").
-            • Each action_plan item must have action, owner, and timeframe.
-            • risks_and_mitigations: structured as objects with risk,
-              likelihood, impact, and mitigation.
-            • communication_plan: separate internal (engineering, leadership,
-              support) and external (users, press, social) messaging guidance.
-            • Capture any dissenting opinions faithfully.
-
-            Respond ONLY with a JSON object matching this schema:
-            {schema}
-        """)
-
-        response = self.client.chat.completions.create(
-            model=self.model,
-            temperature=0.2,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a senior Director of Product making the final "
-                        "launch decision.  You are impartial, data-driven, and "
-                        "prioritise user trust and business sustainability."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
-        )
-
-        raw = response.choices[0].message.content
-        start = raw.find("{")
-        end = raw.rfind("}") + 1
-        payload = json.loads(raw[start:end])
-
-        return WarRoomOutcome(
-            final_decision=Decision(payload["final_decision"]),
-            decision_rationale=payload["decision_rationale"],
-            confidence_score=float(payload.get("confidence_score", 0.5)),
-            confidence_drivers=payload.get("confidence_drivers", []),
-            initial_verdicts=initial_verdicts,
-            critique=critique,
-            revised_verdicts=revised_verdicts,
-            action_plan=payload["action_plan"],
-            risks_and_mitigations=payload["risks_and_mitigations"],
-            communication_plan=payload.get("communication_plan", {"internal": [], "external": []}),
-            follow_up_monitoring=payload["follow_up_monitoring"],
-            dissenting_opinions=payload.get("dissenting_opinions", []),
-        )
-
-    # ── Public API ──────────────────────────────────────────────────────
+    # -- Public API --
 
     @staticmethod
     def _log_tools(agents):

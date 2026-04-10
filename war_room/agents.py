@@ -1,7 +1,7 @@
 import json
 import textwrap
 
-from .models import AgentVerdict, Decision
+from .models import AgentVerdict, Decision, WarRoomOutcome
 from .tools import TOOL_REGISTRY
 from .trace import trace
 
@@ -306,3 +306,108 @@ PHASE1_AGENTS = [
     DataAnalystAgent,
     MarketingCommsAgent,
 ]
+
+
+# -- Director (Phase 3) --
+
+OUTCOME_SCHEMA = """\
+{
+  "final_decision": "Proceed | Pause | Roll Back",
+  "decision_rationale": "... (reference specific metrics and feedback)",
+  "confidence_score": 0.0-1.0,
+  "confidence_drivers": ["What would INCREASE confidence: ...", "What would DECREASE confidence: ..."],
+  "action_plan": [{"action": "...", "owner": "Engineering | PM | Marketing | Support | Leadership", "timeframe": "IMMEDIATE | WITHIN 24h | WITHIN 48h | ..."}],
+  "risks_and_mitigations": [{"risk": "...", "likelihood": "high|medium|low", "impact": "high|medium|low", "mitigation": "..."}],
+  "communication_plan": {"internal": ["..."], "external": ["..."]},
+  "follow_up_monitoring": ["metric to watch", ...],
+  "dissenting_opinions": ["...", ...]
+}"""
+
+
+class DirectorAgent(BaseAgent):
+    name = "Director"
+    role = "director"
+    tools = []
+    system_prompt = textwrap.dedent("""\
+        You are a senior Director of Product making the final launch
+        decision. You are impartial, data-driven, and prioritise user
+        trust and business sustainability.
+    """)
+
+    def synthesize(self, initial_verdicts, critique, revised_verdicts):
+        """Phase 3: make the final go/no-go call from all verdicts."""
+        initial_text = format_verdicts_summary(initial_verdicts)
+        critique_text = format_verdicts_summary([critique])
+        revised_text = format_verdicts_summary(revised_verdicts)
+
+        # detect who changed position
+        changes = []
+        for init in initial_verdicts:
+            for rev in revised_verdicts:
+                if init.role == rev.role:
+                    if init.decision != rev.decision or abs(init.confidence - rev.confidence) > 0.03:
+                        changes.append(
+                            f"{init.agent_name}: {init.decision.value} ({init.confidence:.0%}) "
+                            f"-> {rev.decision.value} ({rev.confidence:.0%})"
+                        )
+        changes_text = "\n".join(changes) if changes else "No agents changed their position."
+
+        prompt = textwrap.dedent(f"""\
+            You are making the final launch decision after hearing all
+            perspectives in a war-room session.
+
+            ## Phase 1 -- Initial Verdicts
+            {initial_text}
+
+            ## Phase 2a -- Risk/Critic's Challenges
+            {critique_text}
+
+            ## Phase 2b -- Revised Verdicts (after deliberation)
+            {revised_text}
+
+            ## Position Changes During Deliberation
+            {changes_text}
+
+            Produce the FINAL war-room decision. Rules:
+            - Decision must be exactly: Proceed, Pause, or Roll Back.
+            - Weight higher-confidence, data-backed verdicts more.
+            - If agents are split, lean toward caution (Pause > Proceed).
+            - Identify the strongest argument AGAINST the majority and
+              explain why it does or doesn't change your conclusion.
+            - decision_rationale must reference specific metrics and themes.
+            - Each action_plan item needs action, owner, and timeframe.
+            - Capture any dissenting opinions faithfully.
+
+            Respond ONLY with JSON matching this schema:
+            {OUTCOME_SCHEMA}
+        """)
+
+        trace(self.name, "llm_call", "Synthesizing final decision")
+        resp = self.client.chat.completions.create(
+            model=self.model,
+            temperature=0.2,
+            messages=[
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": prompt},
+            ],
+        )
+
+        raw = resp.choices[0].message.content
+        start = raw.find("{")
+        end = raw.rfind("}") + 1
+        data = json.loads(raw[start:end])
+
+        return WarRoomOutcome(
+            final_decision=Decision(data["final_decision"]),
+            decision_rationale=data["decision_rationale"],
+            confidence_score=float(data.get("confidence_score", 0.5)),
+            confidence_drivers=data.get("confidence_drivers", []),
+            initial_verdicts=initial_verdicts,
+            critique=critique,
+            revised_verdicts=revised_verdicts,
+            action_plan=data["action_plan"],
+            risks_and_mitigations=data["risks_and_mitigations"],
+            communication_plan=data.get("communication_plan", {"internal": [], "external": []}),
+            follow_up_monitoring=data["follow_up_monitoring"],
+            dissenting_opinions=data.get("dissenting_opinions", []),
+        )
