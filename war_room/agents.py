@@ -152,7 +152,22 @@ class BaseAgent:
 
             Reconsider your position. You can adjust your decision,
             confidence, rationale, or actions. If you stand firm, address
-            the challenges directly. Use dissent_notes for disagreements.
+                        the challenges directly. Use dissent_notes for disagreements.
+
+                        Important calibration rules:
+                        - Treat the Risk/Critic output as one input, not authority.
+                        - Do NOT change your decision just to align with the group.
+                                                - Do not downgrade from Proceed to Pause unless at least
+                                                    one threshold is breached OR a high/critical issue is
+                                                    unresolved.
+                        - Change decision only if the new evidence materially outweighs
+                            your role-specific priorities.
+                        - It is acceptable for agents to disagree after revision when
+                            trade-offs remain unresolved.
+                        - Product Manager should prioritize adoption/retention trade-offs,
+                            Data Analyst should prioritize threshold integrity and trend
+                            confidence, and Marketing & Comms should prioritize trust and
+                            brand risk.
 
             Produce your REVISED verdict as JSON:
             {VERDICT_SCHEMA}
@@ -233,7 +248,7 @@ class MarketingCommsAgent(BaseAgent):
 class RiskCriticAgent(BaseAgent):
     name = "Risk / Critic"
     role = "risk_critic"
-    tools = ["aggregate_metrics"]
+    tools = ["aggregate_metrics", "compare_trends", "summarize_sentiment"]
     system_prompt = textwrap.dedent("""\
         You are the Risk Analyst and Devil's Advocate in a launch war room.
         Challenge optimistic assumptions. Highlight worst-case scenarios
@@ -242,7 +257,20 @@ class RiskCriticAgent(BaseAgent):
         if current rollout trends are safe to extrapolate to full rollout.
         Watch for sunk-cost or confirmation bias.
 
-        Be constructively critical -- your job is to stress-test the decision.
+        Be constructively critical -- your job is to stress-test the decision,
+        not to force a veto.
+
+        Grounding rules you MUST follow:
+        - Do not claim a threshold breach unless latest value is actually
+          beyond the stated threshold in the provided tool output.
+        - Distinguish clearly between "worsening trend" and "breach".
+        - If major metrics are within thresholds, sentiment is net positive,
+          and known issues are low/medium with active mitigation, favor a
+          conditional Proceed or low-confidence Pause over high-confidence
+          Pause/Roll Back.
+        - Include both the strongest risk argument and the strongest
+          proceed argument before concluding.
+
         Decision must be one of: Proceed, Pause, or Roll Back.
         Respond ONLY with the JSON verdict object.
     """)
@@ -282,6 +310,13 @@ class RiskCriticAgent(BaseAgent):
             3. Highlight worst-case scenarios.
             4. Produce your own verdict (you may agree or disagree).
 
+                        Calibration rules:
+                        - Use only provided numbers; do not invent or exaggerate.
+                        - Explicitly separate: breached thresholds vs negative trends.
+                        - If your decision is Pause or Roll Back, include at least one
+                            specific gating condition that would justify Proceed.
+                        - Keep confidence proportional to evidence quality.
+
             Produce your verdict as JSON:
             {VERDICT_SCHEMA}
         """)
@@ -289,7 +324,7 @@ class RiskCriticAgent(BaseAgent):
         trace(self.name, "llm_call", "Critiquing Phase 1 verdicts")
         resp = self.client.chat.completions.create(
             model=self.model,
-            temperature=0.4,
+            temperature=0.2,
             messages=[
                 {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": prompt},
