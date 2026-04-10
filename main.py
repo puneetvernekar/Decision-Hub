@@ -8,7 +8,6 @@ import textwrap
 
 from war_room.mock_dashboard import get_dashboard_snapshot
 from war_room.models import Decision
-from war_room.trace import get_trace
 
 W = 64  # print width
 RESET = "\033[0m"
@@ -35,7 +34,7 @@ def print_outcome(outcome):
     color = COLORS.get(outcome.final_decision, "")
 
     print("\n" + "=" * W)
-    print("  FINAL WAR-ROOM DECISION")
+    print(" DECISION-HUB ")
     print("=" * W)
     print(f"\n  Decision:    {color}{outcome.final_decision.value}{RESET}")
     print(f"  Confidence:  {outcome.confidence_score:.0%}\n")
@@ -105,15 +104,6 @@ def print_outcome(outcome):
     if outcome.dissenting_opinions:
         print_section("Dissenting Opinions")
         print_items(outcome.dissenting_opinions)
-
-    # trace
-    trace_log = get_trace()
-    if trace_log:
-        print_section(f"Execution Trace ({len(trace_log)} steps)")
-        for e in trace_log:
-            print(f"  [{e['step']:>3}] +{e['elapsed_s']:6.2f}s  "
-                  f"{e['source']:20s}  {e['event']:12s}  {e['detail']}")
-        print()
 
     print("=" * W)
 

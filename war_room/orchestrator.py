@@ -124,20 +124,16 @@ class WarRoom:
         for agent in agents:
             if agent.last_tool_results:
                 tool_names = ", ".join(agent.last_tool_results.keys())
-                print(f"    🔧 {agent.name} invoked: {tool_names}")
+                print(f"    {agent.name} invoked: {tool_names}")
 
     def run(self, dashboard, verbose=True):
         """Execute the full 3-phase war-room session and return the outcome."""
         reset_trace()
-        trace("orchestrator", "session", "War-room session started")
         if verbose:
             print("=" * 60)
-            print("  WAR ROOM SESSION — Launch Decision")
+            print("  DECISION-HUB")
             print("=" * 60)
-            print(f"\n  Feature : {dashboard.get('feature_name', 'N/A')}")
-            print(f"  Rollout : {dashboard.get('current_rollout_percentage', '?')}% "
-                  f"({dashboard.get('rollout_schedule', '')})")
-            print(f"  Window  : {len(dashboard.get('daily_metrics', []))} days of data\n")
+        trace("orchestrator", "session", "Session started")
 
         # Phase 1 — Independent Analysis
         trace("orchestrator", "phase_start", "Phase 1 — Independent Agent Analysis")
@@ -145,12 +141,11 @@ class WarRoom:
             print("─" * 60)
             print("  Phase 1 — Independent Agent Analysis")
             print("─" * 60)
-        initial_verdicts, p1_agents = self._phase1_analyze(dashboard)
+        initial_verdicts, _ = self._phase1_analyze(dashboard)
         trace("orchestrator", "phase_end", f"Phase 1 complete — {len(initial_verdicts)} verdicts collected")
         for v in initial_verdicts:
             log_verdict(f"Phase 1 — {v.agent_name}", v)
         if verbose:
-            self._log_tools(p1_agents)
             for v in initial_verdicts:
                 print(f"\n  [{v.agent_name}]  →  {v.decision.value}  "
                       f"(confidence: {v.confidence:.0%})")
@@ -162,11 +157,10 @@ class WarRoom:
             print(f"\n{'─' * 60}")
             print("  Phase 2a — Risk/Critic Challenge")
             print("─" * 60)
-        critique, critic_agent = self._phase2a_critique(dashboard, initial_verdicts)
+        critique, _ = self._phase2a_critique(dashboard, initial_verdicts)
         trace("orchestrator", "phase_end", f"Phase 2a complete — critique: {critique.decision.value}")
         log_verdict("Phase 2a — Risk/Critic", critique)
         if verbose:
-            self._log_tools([critic_agent])
             print(f"\n  [Risk / Critic]  →  {critique.decision.value}  "
                   f"(confidence: {critique.confidence:.0%})")
             print(f"    Rationale: {critique.rationale[:200]}...")
