@@ -2,14 +2,14 @@
   [  2] +  0.00s  orchestrator          phase_start   Phase 1 — Independent Agent Analysis
   [  3] +  0.00s  Product Manager       tool_call     Running tools: aggregate_metrics, compare_trends
   [  4] +  0.00s  Product Manager       llm_call      Sending prompt to LLM
-  [  5] +  9.82s  Product Manager       verdict       Pause (80%)
-  [  6] +  9.82s  Data Analyst          tool_call     Running tools: aggregate_metrics
-  [  7] +  9.82s  Data Analyst          llm_call      Sending prompt to LLM
-  [  8] + 18.53s  Data Analyst          verdict       Pause (80%)
-  [  9] + 18.53s  Marketing & Comms     tool_call     Running tools: summarize_sentiment
-  [ 10] + 18.53s  Marketing & Comms     llm_call      Sending prompt to LLM
-  [ 11] + 27.25s  Marketing & Comms     verdict       Proceed (75%)
-  [ 12] + 27.26s  orchestrator          phase_end     Phase 1 complete — 3 verdicts collected
+  [  5] + 12.14s  Product Manager       verdict       Pause (80%)
+  [  6] + 12.14s  Data Analyst          tool_call     Running tools: aggregate_metrics
+  [  7] + 12.14s  Data Analyst          llm_call      Sending prompt to LLM
+  [  8] + 20.12s  Data Analyst          verdict       Pause (85%)
+  [  9] + 20.12s  Marketing & Comms     tool_call     Running tools: summarize_sentiment
+  [ 10] + 20.12s  Marketing & Comms     llm_call      Sending prompt to LLM
+  [ 11] + 28.63s  Marketing & Comms     verdict       Pause (70%)
+  [ 12] + 28.63s  orchestrator          phase_end     Phase 1 complete — 3 verdicts collected
 
 --- Phase 1 — Product Manager ---
 {
@@ -17,19 +17,18 @@
   "role": "pm",
   "decision": "Pause",
   "confidence": 0.8,
-  "rationale": "The release is showing significant degradation across multiple key metrics, particularly CSAT which is below the threshold. While not all metrics are breached, the consistent worsening trend across nearly all areas indicates a serious issue with the release. Proceeding would likely exacerbate these negative impacts. A pause is necessary to investigate and address the root causes before further rollout.",
+  "rationale": "The overall health is degraded, with CSAT breaching the threshold and nearly all other metrics showing a worsening trend compared to the baseline. While crash rate and latency are not critically high, the consistent negative trend across multiple key metrics, particularly the significant drop in CSAT, indicates a problem impacting user experience. A pause is necessary to investigate and address the root causes before further rollout.",
   "key_evidence": [
     "CSAT is below the threshold (3.7 vs 3.8).",
-    "Nearly all metrics show a worsening trend.",
-    "Support tickets have significantly increased (68.4% increase from baseline).",
-    "NPS has decreased considerably (-9.5% from baseline)."
+    "Nearly all metrics show a worsening trend (crash rate, p95 latency, signup conversion, d1 retention, d7 retention, payment success, support tickets, NPS).",
+    "Support tickets have significantly increased (68.4% delta from baseline).",
+    "NPS has decreased substantially (-9.5% delta from baseline)."
   ],
   "recommended_actions": [
-    "Immediately investigate the root cause of the CSAT decline and other worsening trends.",
-    "Review the release notes and recent code changes for potential regressions.",
-    "Analyze user feedback and support tickets to identify specific pain points.",
-    "Implement a monitoring plan to track key metrics closely during the investigation.",
-    "Consider reverting the release if the investigation reveals a critical issue."
+    "Investigate the root cause of the CSAT decline. Analyze user feedback and support tickets for patterns.",
+    "Review recent code deployments and configuration changes related to Smart Compose.",
+    "Monitor the metrics closely during the pause to identify any immediate improvements or further deterioration.",
+    "Consider A/B testing a reduced feature set or a different implementation of Smart Compose to isolate the source of the issues."
   ],
   "dissent_notes": null
 }
@@ -39,19 +38,19 @@
   "agent_name": "Data Analyst",
   "role": "data_analyst",
   "decision": "Pause",
-  "confidence": 0.8,
-  "rationale": "While most metrics are within acceptable ranges, the CSAT score is significantly below the threshold and trending downwards, indicating a negative user experience.  The crash rate and p95 latency are also showing a worsening trend, though not breaching the defined thresholds yet. The support ticket volume is also elevated. Given the negative CSAT and concerning trends, a pause is warranted to investigate and address the underlying issues before proceeding further. The known issues list highlights potential contributors to these problems, particularly the draft content loss and latency issues.",
+  "confidence": 0.85,
+  "rationale": "While most metrics are within acceptable ranges, the CSAT score is significantly below the threshold (3.7 vs 3.8) and trending downwards, indicating a negative user experience.  The p95 latency is also creeping close to the breach threshold. The support ticket volume is also elevated. Given the known issues related to draft loss and suggestion accuracy, pausing the rollout will allow for further investigation and remediation without potentially worsening user sentiment.",
   "key_evidence": [
-    "CSAT score is below threshold (3.7 vs 3.8) and trending downwards.",
-    "Crash rate is trending upwards (0.57 vs baseline 0.35).",
-    "P95 latency is trending upwards (246ms vs baseline 195ms).",
-    "Support tickets are elevated (64 vs baseline 38)."
+    "CSAT score is below threshold and trending downwards (3.7 vs 3.8)",
+    "p95 latency is approaching the threshold (246ms vs 300ms)",
+    "Support ticket volume is elevated (64 vs baseline of 38)",
+    "Known Issue KI-001 (Draft content loss) and KI-003 (Suggestion accuracy) directly impact user experience."
   ],
   "recommended_actions": [
-    "Investigate the root cause of the low CSAT score. Conduct user interviews and analyze feedback data.",
-    "Prioritize addressing the known issues, particularly KI-001 (draft content loss) and KI-002 (latency).",
-    "Monitor the key metrics closely during the pause to assess the impact of any corrective actions.",
-    "Re-evaluate the rollout plan and consider a more gradual rollout approach in the future."
+    "Investigate the root cause of the low CSAT score, focusing on user feedback related to Smart Compose.",
+    "Re-evaluate the inference API performance and scaling configuration to address latency concerns.",
+    "Prioritize resolution of Known Issue KI-001 (Draft content loss) and KI-003 (Suggestion accuracy).",
+    "Consider a more gradual rollout to smaller cohorts to monitor impact and gather feedback before expanding further."
   ],
   "dissent_notes": null
 }
@@ -60,29 +59,28 @@
 {
   "agent_name": "Marketing & Comms",
   "role": "marketing_comms",
-  "decision": "Proceed",
-  "confidence": 0.75,
-  "rationale": "While there are some notable issues (draft loss, latency spikes, lack of a user toggle), the overall sentiment is leaning towards positive, and critical issues like draft loss appear to be mitigated by a hotfix. The rollout is at 25% and nearing the 50% expansion point, so proceeding cautiously is warranted. The known issues are being actively monitored and addressed.",
+  "decision": "Pause",
+  "confidence": 0.7,
+  "rationale": "While the overall sentiment isn't overwhelmingly negative, several key issues highlighted in the feedback and known issues list warrant a pause in rollout. The draft content loss (KI-001) is a high-severity issue, and the lack of a user-facing toggle (KI-004) is a significant usability concern. The elevated latency (KI-002) also indicates performance problems that need addressing. The mixed sentiment, with a significant number of neutral responses, suggests that the feature isn't universally well-received and further investigation is needed before wider adoption.",
   "key_evidence": [
-    "Sentiment breakdown shows a slight positive leaning (12 positive, 6 negative, 17 neutral).",
-    "KI-001 (draft content loss) has a 'hotfix-validated-day-9' status, indicating a resolution.",
-    "KI-002 (latency) is under monitoring after a hotfix, suggesting active mitigation.",
-    "Release notes clearly outline the feature and rollout plan, demonstrating transparency.",
-    "User feedback from app store and reddit shows a mix of positive and negative experiences, but many users are finding value in the feature."
+    "Known Issue KI-001: Draft content loss on rapid suggestion dismiss (high severity)",
+    "Known Issue KI-004: No user-facing toggle to disable Smart Compose (medium impact)",
+    "Known Issue KI-002: Elevated p95 latency at >10% rollout",
+    "Sentiment breakdown: 12 positive, 6 negative, 17 neutral (indicating mixed reception)"
   ],
   "recommended_actions": [
-    "Continue monitoring p95 latency closely as the rollout expands to 50%.",
-    "Prioritize the user-facing toggle for v4.12.1 as it's a significant user experience pain point.",
-    "Maintain vigilance for recurrence of draft loss issues, despite the hotfix.",
-    "Prepare a communication plan to address user concerns about the lack of a disable toggle."
+    "Address Known Issue KI-001: Further investigate and stabilize the draft auto-save mechanism.",
+    "Address Known Issue KI-004: Prioritize the development and release of a user-facing toggle to disable Smart Compose.",
+    "Address Known Issue KI-002: Continue monitoring and optimizing inference API latency.",
+    "Conduct user research to understand the reasons behind the significant number of neutral responses."
   ],
   "dissent_notes": null
 }
-  [ 13] + 27.26s  orchestrator          phase_start   Phase 2a — Risk/Critic Challenge
-  [ 14] + 27.26s  Risk / Critic         tool_call     Running tools: aggregate_metrics
-  [ 15] + 27.26s  Risk / Critic         llm_call      Critiquing Phase 1 verdicts
-  [ 16] + 36.68s  Risk / Critic         verdict       Pause (80%)
-  [ 17] + 36.68s  orchestrator          phase_end     Phase 2a complete — critique: Pause
+  [ 13] + 28.63s  orchestrator          phase_start   Phase 2a — Risk/Critic Challenge
+  [ 14] + 28.63s  Risk / Critic         tool_call     Running tools: aggregate_metrics
+  [ 15] + 28.63s  Risk / Critic         llm_call      Critiquing Phase 1 verdicts
+  [ 16] + 37.88s  Risk / Critic         verdict       Pause (80%)
+  [ 17] + 37.89s  orchestrator          phase_end     Phase 2a complete — critique: Pause
 
 --- Phase 2a — Risk/Critic ---
 {
@@ -90,55 +88,55 @@
   "role": "risk_critic",
   "decision": "Pause",
   "confidence": 0.8,
-  "rationale": "While the rollout appears to be progressing, several key metrics are trending negatively and one is breaching the threshold. The most concerning is the CSAT score, which is significantly below the baseline and indicates a negative user experience. While individual metrics like latency are close to thresholds, the overall trend and the CSAT score suggest underlying issues that need to be investigated before further rollout. The known issues list, particularly KI-004 (lack of user toggle) and KI-001 (draft loss), are also contributing to user dissatisfaction and need resolution.",
+  "rationale": "While the rollout appears to have stabilized after the hotfixes, several key metrics are trending negatively and one is below threshold. The CSAT score is particularly concerning, indicating a significant drop in user satisfaction. The latency and crash rate are also slightly elevated, suggesting ongoing performance issues.  The lack of a user-facing toggle for Smart Compose, while planned for a future release, is a significant usability blocker and a source of user frustration, as evidenced by the support tickets. Given the current state, proceeding further risks exacerbating these issues and potentially damaging user trust.",
   "key_evidence": [
-    "CSAT score breaching threshold (3.7 vs. 3.8 baseline)",
-    "Downward trend in NPS (38 vs. 42 baseline)",
-    "Downward trend in Signup Conversion Rate (4.3 vs. 4.4 baseline)",
-    "Known Issue KI-004: Lack of user-facing disable toggle, forcing users to rely on support",
-    "Known Issue KI-001: Draft content loss, a critical usability issue"
+    "CSAT score is below threshold (3.7 vs. 3.8) and trending downward.",
+    "p95 latency is slightly elevated (246ms vs. target of <300ms) and trending upward.",
+    "Crash rate is elevated (0.57 vs baseline 0.35) and trending upwards.",
+    "Support tickets are significantly higher than baseline (64 vs 38).",
+    "Lack of user-facing toggle for Smart Compose is a known issue and source of user frustration."
   ],
   "recommended_actions": [
-    "Immediately pause the rollout to the remaining 25% of users.",
-    "Prioritize investigation and resolution of Known Issue KI-001 (draft loss).",
-    "Implement a user-facing toggle to disable Smart Compose (addressing KI-004).",
-    "Conduct a thorough root cause analysis of the CSAT score decline, gathering user feedback and identifying specific pain points.",
-    "Monitor the metrics closely after implementing the above actions, before resuming the rollout."
+    "Immediately halt further rollout expansion.",
+    "Prioritize the release of the user-facing Smart Compose toggle in v4.12.1.",
+    "Conduct a thorough investigation into the root cause of the CSAT score decline.  This should involve user feedback analysis and potentially A/B testing different Smart Compose configurations.",
+    "Optimize inference API performance to reduce latency and improve stability.  Review auto-scaling thresholds and cold-start mitigation strategies.",
+    "Monitor crash rate closely and investigate any recurring patterns."
   ],
   "dissent_notes": null
 }
-  [ 18] + 36.68s  orchestrator          phase_start   Phase 2b — Agent Revision (after deliberation)
-  [ 19] + 36.68s  Product Manager       llm_call      Revising verdict
-  [ 20] + 48.65s  Product Manager       revised       Pause (85%)
-  [ 21] + 48.65s  Data Analyst          llm_call      Revising verdict
-  [ 22] + 60.31s  Data Analyst          revised       Pause (90%)
-  [ 23] + 60.31s  Marketing & Comms     llm_call      Revising verdict
-  [ 24] + 71.70s  Marketing & Comms     revised       Pause (85%)
-  [ 25] + 71.70s  orchestrator          phase_end     Phase 2b complete — 3 revised verdicts
+  [ 18] + 37.89s  orchestrator          phase_start   Phase 2b — Agent Revision (after deliberation)
+  [ 19] + 37.89s  Product Manager       llm_call      Revising verdict
+  [ 20] + 48.03s  Product Manager       revised       Pause (90%)
+  [ 21] + 48.03s  Data Analyst          llm_call      Revising verdict
+  [ 22] + 57.41s  Data Analyst          revised       Pause (90%)
+  [ 23] + 57.41s  Marketing & Comms     llm_call      Revising verdict
+  [ 24] + 67.50s  Marketing & Comms     revised       Pause (85%)
+  [ 25] + 67.50s  orchestrator          phase_end     Phase 2b complete — 3 revised verdicts
 
 --- Phase 2b — Product Manager (revised) ---
 {
   "agent_name": "Product Manager",
   "role": "pm",
   "decision": "Pause",
-  "confidence": 0.85,
-  "rationale": "While Marketing & Comms highlights positive sentiment and a hotfix for draft loss, the overwhelming weight of evidence points to a concerning degradation in user experience. The CSAT score is below the threshold and trending downwards, corroborated by declining NPS, Signup Conversion Rate, and a significant increase in support tickets. The Risk/Critic's assessment accurately identifies the severity of these issues. Proceeding further, even cautiously, risks exacerbating these negative trends and damaging user trust. While the hotfix for draft loss is positive, the persistent latency issues and lack of a user toggle remain significant friction points. The Data Analyst's perspective on the concerning trends aligns with my assessment.",
+  "confidence": 0.9,
+  "rationale": "While the initial hotfixes stabilized the rollout, the consistent negative trends across multiple key metrics, particularly the concerning CSAT score (3.7 vs. 3.8 threshold) and elevated support ticket volume (64 vs baseline of 38), outweigh any short-term gains from continued rollout. The Risk/Critic's assessment highlighting user frustration due to the lack of a Smart Compose toggle (KI-004) is particularly relevant. Proceeding further risks eroding user trust and potentially causing more significant damage to the overall user experience. The data analyst's point about the creeping p95 latency also warrants caution. While latency isn't critically high *yet*, the upward trend is a red flag.",
   "key_evidence": [
-    "CSAT is below the threshold (3.7 vs 3.8) and trending downwards.",
-    "NPS has decreased considerably (-9.5% from baseline).",
-    "Signup Conversion Rate is trending downwards (4.3 vs 4.4 baseline).",
-    "Support tickets have significantly increased (68.4% increase from baseline).",
-    "Known Issue KI-004: Lack of user-facing disable toggle is a significant user pain point.",
-    "Known Issue KI-002 (latency) remains a concern despite hotfix monitoring."
+    "CSAT score below threshold and trending downwards (3.7 vs 3.8).",
+    "Significant increase in support tickets (64 vs baseline of 38).",
+    "Negative NPS trend (-9.5% delta from baseline).",
+    "Lack of user-facing toggle for Smart Compose (KI-004) is a known usability blocker.",
+    "p95 latency trending upwards (246ms vs 300ms target)."
   ],
   "recommended_actions": [
-    "Immediately pause the rollout to the remaining 25% of users.",
-    "Prioritize investigation and resolution of Known Issue KI-001 (draft loss) - ensure the hotfix is truly stable and doesn't reintroduce the issue.",
-    "Implement a user-facing toggle to disable Smart Compose (addressing KI-004) - this is a critical usability improvement.",
-    "Conduct a thorough root cause analysis of the CSAT score decline, gathering user feedback and identifying specific pain points. Focus on latency issues.",
-    "Monitor key metrics (CSAT, NPS, Signup Conversion Rate, Support Tickets, Latency) closely during the pause to assess the impact of corrective actions."
+    "Immediately halt further rollout expansion.",
+    "Prioritize the release of the user-facing Smart Compose toggle in v4.12.1. This is a critical usability fix.",
+    "Conduct a thorough investigation into the root cause of the CSAT score decline, including user feedback analysis and A/B testing of Smart Compose configurations.  Focus on identifying specific pain points.",
+    "Optimize inference API performance to reduce latency and improve stability. Review auto-scaling thresholds and cold-start mitigation strategies.  Monitor closely.",
+    "Address Known Issue KI-001 (Draft content loss) and KI-003 (Suggestion accuracy) concurrently with the CSAT investigation. These likely contribute to user frustration.",
+    "Re-evaluate the rollout strategy to consider a more gradual, cohort-based approach for future releases, allowing for more granular monitoring and feedback collection."
   ],
-  "dissent_notes": "While I acknowledge the Marketing & Comms team's observation of positive sentiment, I believe this is outweighed by the objective data indicating a negative user experience. A slight positive leaning in sentiment does not negate the significant negative impact of the declining CSAT and related metrics. The hotfix for draft loss is a positive step, but it does not address the broader issues contributing to user dissatisfaction."
+  "dissent_notes": null
 }
 
 --- Phase 2b — Data Analyst (revised) ---
@@ -147,23 +145,23 @@
   "role": "data_analyst",
   "decision": "Pause",
   "confidence": 0.9,
-  "rationale": "Despite Marketing & Comms' perspective on a slight positive sentiment, the preponderance of evidence points to a concerning degradation in user experience. The CSAT score is below the threshold (3.7 vs 3.8) and trending downwards, corroborated by the Risk/Critic and Product Manager assessments. While the hotfix for draft content loss is a positive step, the continued negative trends in CSAT, NPS, Signup Conversion Rate, and elevated support tickets suggest unresolved underlying issues. The latency issue, though being monitored, remains a potential contributor. Proceeding further risks exacerbating these negative impacts and potentially damaging long-term user trust. A pause is necessary to thoroughly investigate the root causes of the CSAT decline and address the remaining known issues.",
+  "rationale": "While initial stabilization occurred after hotfixes, the persistent negative trends across multiple key metrics, particularly the concerning CSAT score below threshold and its downward trajectory, outweigh any perceived stability. The Risk/Critic's assessment accurately highlights the potential for further damage to user trust if we proceed. Although latency and crash rates are not critically high *yet*, their upward trends warrant caution. The lack of a user-facing toggle remains a significant usability blocker, contributing to user frustration and support ticket volume. A pause allows for focused investigation and remediation without risking further erosion of user sentiment.",
   "key_evidence": [
-    "CSAT score below threshold (3.7 vs 3.8) and trending downwards.",
-    "NPS has decreased considerably (-9.5% from baseline).",
-    "Signup Conversion Rate trending downwards (4.3 vs 4.4 baseline).",
-    "Elevated support ticket volume (64 vs baseline 38).",
-    "Known Issue KI-004: Lack of user-facing disable toggle.",
-    "Known Issue KI-001: Draft content loss (despite hotfix, impact likely persists)."
+    "CSAT score is below threshold (3.7 vs 3.8) and trending downwards, indicating a negative user experience.",
+    "Nearly all metrics (crash rate, p95 latency, signup conversion, D1/D7 retention, payment success, support tickets, NPS) show a worsening trend.",
+    "Support ticket volume is significantly elevated (64 vs baseline of 38, a 68.4% increase).",
+    "NPS has decreased substantially (-9.5% delta from baseline).",
+    "Lack of user-facing toggle for Smart Compose is a known issue and a source of user frustration, contributing to support tickets.",
+    "p95 latency is trending upwards, approaching the threshold (246ms vs 300ms)."
   ],
   "recommended_actions": [
-    "Immediately pause the rollout to the remaining 25% of users.",
-    "Prioritize investigation and resolution of Known Issue KI-001 (draft content loss) \u2013 confirm hotfix effectiveness and address any lingering issues.",
-    "Implement a user-facing toggle to disable Smart Compose (addressing KI-004) as a high-priority fix.",
-    "Conduct a thorough root cause analysis of the CSAT score decline, gathering user feedback and identifying specific pain points. Focus on understanding *why* users are dissatisfied.",
-    "Closely monitor all key metrics (CSAT, NPS, Signup Conversion, Support Tickets, Latency) during the investigation and subsequent testing before resuming rollout."
+    "Immediately investigate the root cause of the CSAT decline, prioritizing user feedback analysis and potentially A/B testing different Smart Compose configurations.",
+    "Prioritize the release of the user-facing Smart Compose toggle in v4.12.1.",
+    "Optimize inference API performance to reduce latency and improve stability, reviewing auto-scaling thresholds and cold-start mitigation strategies.",
+    "Monitor crash rate closely and investigate any recurring patterns.",
+    "Analyze support tickets for common themes related to the negative user experience."
   ],
-  "dissent_notes": "While Marketing & Comms highlights a slight positive sentiment and the hotfix for draft loss, this is outweighed by the significant negative impact on CSAT and the broader downward trends. Relying solely on sentiment analysis without addressing the underlying performance and usability issues is a risky approach."
+  "dissent_notes": null
 }
 
 --- Phase 2b — Marketing & Comms (revised) ---
@@ -172,104 +170,104 @@
   "role": "marketing_comms",
   "decision": "Pause",
   "confidence": 0.85,
-  "rationale": "While initial sentiment appeared cautiously positive, the overwhelming consensus from Product, Data Analysis, and Risk assessment indicates a significant and concerning degradation in key user experience metrics. The CSAT score falling below the threshold and trending downwards is a critical red flag, outweighing the initial positive sentiment. The worsening trends in NPS, Signup Conversion Rate, Crash Rate, and P95 Latency, coupled with the unresolved issues (draft loss, latency, and the absence of a user toggle), present an unacceptable risk to brand reputation and user trust. Proceeding further would likely exacerbate these negative impacts and potentially lead to a more severe crisis later. A pause is necessary to thoroughly investigate the root causes and implement corrective actions before any further rollout.",
+  "rationale": "While initial concerns regarding draft content loss (KI-001) have been partially addressed with hotfixes, the persistent negative trends across key metrics \u2013 particularly the CSAT score, support ticket volume, and NPS \u2013 outweigh any potential benefits of continued rollout. The lack of a user-facing opt-out toggle (KI-004) remains a significant usability blocker and a consistent source of user frustration, amplifying negative sentiment. The Data Analyst and Product Manager's assessments regarding CSAT and overall health are particularly compelling. Proceeding risks further eroding user trust and potentially necessitating a more disruptive rollback later. The slight elevation in latency and crash rate, while not critical, are also concerning indicators of underlying instability.",
   "key_evidence": [
-    "CSAT score is below threshold (3.7 vs 3.8) and trending downwards.",
-    "Nearly all metrics show a worsening trend (NPS, Signup Conversion Rate, Crash Rate, P95 Latency).",
-    "Support tickets have significantly increased (68.4% increase from baseline).",
-    "Known Issue KI-004: Lack of user-facing disable toggle.",
-    "Known Issue KI-001: Draft content loss - a critical usability issue."
+    "CSAT score is below threshold (3.7 vs 3.8) and trending downwards (Product Manager, Data Analyst, Risk Critic)",
+    "Significant increase in support tickets (68.4% delta from baseline) (Product Manager, Data Analyst, Risk Critic)",
+    "Substantial decrease in NPS (-9.5% delta from baseline) (Product Manager, Data Analyst, Risk Critic)",
+    "Lack of user-facing toggle for Smart Compose (KI-004) remains a significant usability blocker (Risk Critic)",
+    "Nearly all metrics show a worsening trend (Product Manager)"
   ],
   "recommended_actions": [
-    "Immediately investigate the root cause of the CSAT decline and other worsening trends, prioritizing user interviews and feedback analysis.",
-    "Prioritize resolution of Known Issue KI-001 (draft content loss) and KI-002 (latency).",
-    "Implement a user-facing toggle to disable the feature, addressing Known Issue KI-004.",
-    "Implement a comprehensive monitoring plan to track key metrics closely during the pause.",
-    "Re-evaluate the rollout plan and consider a more gradual, phased rollout approach in the future, with more rigorous testing and monitoring at each stage."
+    "Prioritize a thorough investigation into the root cause of the CSAT decline, focusing on user feedback and support ticket analysis. This investigation should be separate from, and inform, the technical remediation efforts.",
+    "Accelerate the release of the user-facing Smart Compose toggle in v4.12.1. This is a critical usability fix.",
+    "Review and optimize inference API performance to reduce latency and improve stability. Re-evaluate auto-scaling thresholds and cold-start mitigation strategies.",
+    "Closely monitor crash rate and investigate any recurring patterns. Address any identified issues promptly.",
+    "Consider a phased rollout to smaller cohorts *after* addressing the core issues identified, with enhanced monitoring and feedback loops."
   ],
-  "dissent_notes": "My initial assessment prioritized a slight positive sentiment, but the weight of evidence and the severity of the CSAT decline, as highlighted by the Product Manager, Data Analyst, and Risk/Critic, necessitates a more cautious and responsible approach. While a hotfix for draft loss was implemented, the ongoing negative trends suggest that this fix alone is insufficient to address the underlying issues impacting user experience."
+  "dissent_notes": null
 }
-  [ 26] + 71.70s  orchestrator          phase_start   Phase 3 — Director / Senior PM Final Decision
-  [ 27] + 71.70s  Director              llm_call      Synthesizing final decision
-  [ 28] + 91.54s  orchestrator          phase_end     Phase 3 complete — decision: Pause
-  [ 29] + 91.54s  orchestrator          session       War-room session complete
+  [ 26] + 67.50s  orchestrator          phase_start   Phase 3 — Director / Senior PM Final Decision
+  [ 27] + 67.50s  Director              llm_call      Synthesizing final decision
+  [ 28] + 86.55s  orchestrator          phase_end     Phase 3 complete — decision: Pause
+  [ 29] + 86.55s  orchestrator          session       War-room session complete
 
 ============================================================
 FINAL WAR-ROOM OUTCOME
 ============================================================
 {
   "final_decision": "Pause",
-  "decision_rationale": "The overwhelming consensus, supported by data and risk assessment, indicates a significant degradation in user experience. The CSAT score falling below the threshold (3.7 vs. 3.8) and the downward trends in NPS (-9.5% from baseline), Signup Conversion Rate (4.3 vs 4.4 baseline), and increased support tickets (68.4% increase from baseline) are critical indicators of user dissatisfaction. While the hotfix for draft content loss is a positive step, it doesn't address the persistent latency issues (P95 latency trending upwards to 246ms vs baseline 195ms) or the lack of a user toggle, both of which contribute to a negative user experience. Proceeding with the rollout at this point risks further erosion of user trust and potential long-term damage to the product's reputation. The data consistently outweighs the initial positive sentiment reported by Marketing & Comms.",
+  "decision_rationale": "Despite initial stabilization efforts following hotfixes, the consistent negative trends across multiple key metrics, particularly the CSAT score (3.7 vs. 3.8 threshold) and the significant increase in support tickets (64 vs baseline of 38), indicate a fundamental issue impacting user experience. The downward trend in NPS (-9.5% delta from baseline) further reinforces this concern. The lack of a user-facing toggle for Smart Compose (KI-004) is a persistent usability blocker, directly contributing to user frustration and support ticket volume. The Data Analyst and Product Manager\u2019s high confidence (90%) in pausing, coupled with Marketing & Comms\u2019 agreement (85%), strongly supports this decision. Proceeding would risk further eroding user trust and potentially necessitate a more disruptive rollback later. The creeping p95 latency (246ms vs 300ms target) and elevated crash rate (0.57 vs baseline 0.35) are also concerning indicators of underlying instability.",
   "confidence_score": 0.92,
   "confidence_drivers": [
-    "What would INCREASE confidence: A demonstrable and sustained improvement in CSAT score and NPS following corrective actions, confirmed by user feedback.",
-    "What would DECREASE confidence: Reappearance of draft content loss issues, continued latency spikes, or a failure to implement a user toggle within the defined timeframe."
+    "What would INCREASE confidence: A demonstrable and sustained improvement in CSAT score above the 3.8 threshold, coupled with a reduction in support ticket volume and a positive trend in NPS.",
+    "What would DECREASE confidence: Further deterioration in any of the key metrics, particularly CSAT, or a significant increase in negative user feedback regarding Smart Compose."
   ],
   "action_plan": [
     {
-      "action": "Investigate root cause of CSAT decline and latency issues.",
-      "owner": "Engineering",
+      "action": "Halt further rollout expansion.",
+      "owner": "PM",
       "timeframe": "IMMEDIATE"
     },
     {
-      "action": "Confirm stability of draft content loss hotfix and address any lingering issues.",
-      "owner": "Engineering",
-      "timeframe": "WITHIN 24h"
-    },
-    {
-      "action": "Implement user-facing toggle to disable Smart Compose.",
+      "action": "Prioritize release of user-facing Smart Compose toggle in v4.12.1.",
       "owner": "Engineering",
       "timeframe": "WITHIN 48h"
     },
     {
-      "action": "Conduct user interviews and analyze feedback data to understand the specific pain points driving CSAT decline.",
-      "owner": "UX Research",
+      "action": "Conduct thorough investigation into root cause of CSAT decline (user feedback analysis, A/B testing).",
+      "owner": "PM, Data Analyst",
       "timeframe": "WITHIN 48h"
     },
     {
-      "action": "Develop a communication plan to address user concerns about the lack of a disable toggle.",
-      "owner": "Marketing & Comms",
+      "action": "Optimize inference API performance to reduce latency and improve stability. Review auto-scaling thresholds.",
+      "owner": "Engineering",
+      "timeframe": "WITHIN 48h"
+    },
+    {
+      "action": "Address Known Issue KI-001 (Draft content loss) and KI-003 (Suggestion accuracy) concurrently with CSAT investigation.",
+      "owner": "Engineering",
+      "timeframe": "WITHIN 72h"
+    },
+    {
+      "action": "Analyze support tickets for common themes related to negative user experience.",
+      "owner": "Support, Data Analyst",
       "timeframe": "WITHIN 24h"
     }
   ],
   "risks_and_mitigations": [
     {
-      "risk": "Hotfix for draft content loss proves unstable and issues re-emerge.",
-      "likelihood": "medium",
-      "impact": "high",
-      "mitigation": "Implement robust monitoring and automated rollback procedures."
-    },
-    {
-      "risk": "Latency issues prove difficult to resolve and continue to impact user experience.",
+      "risk": "Prolonged pause negatively impacts feature adoption and business goals.",
       "likelihood": "medium",
       "impact": "medium",
-      "mitigation": "Prioritize performance optimization and consider architectural changes."
+      "mitigation": "Communicate transparently with stakeholders about the pause and the reasons behind it. Focus on delivering a high-quality, reliable feature upon relaunch."
     },
     {
-      "risk": "User frustration and negative sentiment continue to escalate during the pause.",
+      "risk": "User frustration and negative sentiment persist during the pause.",
       "likelihood": "medium",
       "impact": "medium",
-      "mitigation": "Proactive communication with users, explaining the situation and outlining the steps being taken to address the issues."
+      "mitigation": "Proactively address user concerns through social media and support channels. Provide regular updates on the investigation and remediation efforts."
     }
   ],
   "communication_plan": {
     "internal": [
-      "Briefing to leadership on the pause decision and action plan.",
-      "Regular updates to all teams on investigation progress and corrective actions."
+      "Briefing to leadership on the decision and action plan.",
+      "Daily stand-up updates on investigation progress."
     ],
     "external": [
-      "Prepare a holding statement for social media and support channels explaining the pause and commitment to resolving issues. (Marketing & Comms)"
+      "No immediate external communication. Prepare a draft communication for release upon relaunch, explaining the pause and improvements made."
     ]
   },
   "follow_up_monitoring": [
     "CSAT score",
+    "Support ticket volume",
     "NPS",
-    "Signup Conversion Rate",
-    "Support Ticket Volume",
-    "P95 Latency",
-    "Draft Content Loss incident rate"
+    "p95 latency",
+    "Crash rate",
+    "Signup conversion",
+    "D1/D7 retention"
   ],
   "dissenting_opinions": [
-    "Marketing & Comms initially expressed concern that proceeding cautiously was warranted due to a slight positive sentiment. However, they ultimately acknowledged the overwhelming data indicating a negative user experience and supported the pause. Their primary concern was the potential impact of a pause on user perception, which is addressed by the communication plan."
+    "Some argued that proceeding with a smaller, more controlled rollout might allow for further data collection and refinement. However, the risk of further damaging user trust outweighed the potential benefits, given the current state of the metrics."
   ]
 }
