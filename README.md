@@ -1,143 +1,117 @@
-# War Room — Multi-Agent Launch Decision System
+# Decision Hub
 
-A multi-agent system that simulates a cross-functional "war room" during a
-product launch. It analyses a mock dashboard (metrics + user feedback) and
-produces a structured launch decision: **Proceed / Pause / Roll Back**, along
-with a concrete action plan.
+Decision Hub is a multi-agent launch war-room simulator.
+It ingests mock product metrics and user feedback, runs a 3-phase agent process,
+and outputs a final decision:
 
-## Architecture
+- Proceed
+- Pause
+- Roll Back
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                    War Room Orchestrator                  │
-│                                                          │
-│  Phase 1 — Independent Analysis (parallel)               │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐               │
-│  │    PM    │  │  Data    │  │Marketing │               │
-│  │  Agent   │  │ Analyst  │  │ & Comms  │               │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘               │
-│       │              │             │                      │
-│       └──────────────┼─────────────┘                      │
-│                      ▼                                    │
-│  Phase 2a — Risk/Critic Challenge                        │
-│  ┌──────────────────────────────────────┐                │
-│  │  Risk/Critic reviews all 3 verdicts  │                │
-│  │  → challenges + own verdict          │                │
-│  └──────────────────┬───────────────────┘                │
-│                     ▼                                     │
-│  Phase 2b — Deliberation & Revision (parallel)           │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐               │
-│  │ PM revise│  │DA revise │  │MC revise │               │
-│  │ (sees    │  │ (sees    │  │ (sees    │               │
-│  │ peers +  │  │ peers +  │  │ peers +  │               │
-│  │ critique)│  │ critique)│  │ critique)│               │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘               │
-│       │              │             │                      │
-│       └──────────────┼─────────────┘                      │
-│                      ▼                                    │
-│  Phase 3 — Director / Senior PM Synthesis                │
-│  ┌──────────────────────────────────────┐                │
-│  │  Receives initial + critique +       │                │
-│  │  revised verdicts → final decision   │                │
-│  └──────────────────────────────────────┘                │
-└──────────────────────────────────────────────────────────┘
-```
+## Current Program Flow
 
-### Agents
+1. Phase 1: Independent analysis
+- Product Manager
+- Data Analyst
+- Marketing and Comms
 
-| Agent | Phase | Role |
-|---|---|---|
-| **Product Manager** | 1 & 2b | Success criteria, user impact, go/no-go framing |
-| **Data Analyst** | 1 & 2b | Quantitative trends, anomalies, confidence levels |
-| **Marketing & Comms** | 1 & 2b | Sentiment, brand risk, communication actions |
-| **Risk / Critic** | 2a | Devil's advocate — challenges assumptions, highlights risks |
-| **Director / Senior PM** | 3 | Final authority — synthesises all inputs into go/no-go decision |
+2. Phase 2a: Risk and Critic challenge
+- Reviews Phase 1 verdicts and provides a stress-test verdict
 
-### Three-Phase Process
+3. Phase 2b: Agent revision
+- Phase 1 agents revise after seeing peers and Risk and Critic
 
-1. **Independent Analysis** — PM, Data Analyst, and Marketing/Comms analyse the
-   dashboard in parallel and submit independent verdicts.
-2. **Deliberation** —
-   - **(2a)** The Risk/Critic reviews all Phase 1 verdicts, challenges
-     assumptions, and produces its own verdict.
-   - **(2b)** Each Phase 1 agent sees the other agents' verdicts plus the
-     Risk/Critic's challenges, and submits a **revised** verdict — adjusting
-     decision, confidence, or rationale as warranted.
-3. **Director Synthesis** — A Director / Senior PM receives the initial verdicts,
-   the Risk/Critic's challenge, and the revised verdicts.  They make the final
-   go/no-go call with an action plan, risk mitigations, and monitoring gates.
+4. Phase 3: Director synthesis
+- Produces final decision, rationale, action plan, risks, comms plan, and monitoring list
 
-### Agent Tools
+## Setup Instructions
 
-Agents invoke programmatic tools **before** calling the LLM.  Tool outputs
-(aggregated stats, anomalies, sentiment breakdowns, trend comparisons) are
-injected into the prompt so the model reasons over processed data, not raw JSON.
-
-| Tool | Called by | Description |
-|---|---|---|
-| `aggregate_metrics` | PM, Data Analyst, Risk/Critic | Per-metric stats (min/max/mean/latest), trend direction, threshold breach flags, overall health score |
-| `detect_anomalies` | Data Analyst, Risk/Critic | Z-score anomaly detection across all daily metric time-series — returns spikes/drops with severity |
-| `summarize_sentiment` | Marketing & Comms | Channel/theme/timeline breakdown of user feedback with high-impact item detection |
-| `compare_trends` | PM | Baseline deltas, 3-day velocity, direction (improving/worsening/stable), linear recovery ETA |
-
-## Mock Scenario
-
-**Feature:** Smart Compose 2.0 — AI-powered email completion  
-**Rollout:** 15% of users over 72 hours  
-**Status:** Error rate spiked to 2.4% (threshold: 1.0%), latency peaked at
-420ms, but both are recovering. User feedback is polarised — strong adoption
-signals alongside performance complaints and a public auto-complete incident.
-
-## Quick Start
-
-### Offline Demo (no API key needed)
+1. Install Python 3.10+.
+2. Install dependencies.
 
 ```bash
 pip install -r requirements.txt
-python main.py --offline
 ```
 
-### With OpenAI API
+3. Create environment file.
 
 ```bash
-export OPENAI_API_KEY="sk-..."
-pip install -r requirements.txt
-python main.py --model gpt-4o
+cp .env.example .env
 ```
 
-### JSON Output
+4. Update .env values for your provider and model.
 
-Add `--json` to also write the full structured outcome to `war_room_outcome.json`:
+## Environment Variables
+
+Required:
+
+- OPENAI_API_KEY: API key for your OpenAI-compatible endpoint
+
+Optional but commonly used:
+
+- OPENAI_BASE_URL: Base URL for non-OpenAI providers (for example Ollama or Groq)
+- LLM_MODEL: Model name used for all agent calls
+- MAX_PARALLEL_AGENTS: Parallelism for Phase 1 and Phase 2b (use 1 for stability)
+- OUTPUT_JSON_PATH: File path for final JSON output
+
+Note:
+
+- The trace log file path is currently fixed to decision-hub.log in code.
+
+Example .env values:
+
+```dotenv
+OPENAI_API_KEY=your-key
+OPENAI_BASE_URL=http://localhost:11434/v1
+LLM_MODEL=gemma3:12b
+MAX_PARALLEL_AGENTS=1
+OUTPUT_JSON_PATH=decision_hub_output.json
+```
+
+## Run End-to-End
+
+From project root:
 
 ```bash
-python main.py --offline --json
+python main.py
 ```
+
+What happens end-to-end:
+
+- Console prints session phases and final decision summary
+- Trace log is written to decision-hub.log
+- Final JSON payload is written to path in OUTPUT_JSON_PATH
+
+## Example Commands To Reproduce Output
+
+Default run (uses .env):
+
+```bash
+python main.py
+```
+
+## Output Files
+
+- decision-hub.log: phase-by-phase execution trace and per-agent JSON verdict dumps
+- decision_hub_output.json: final structured result consumed by downstream workflows
 
 ## Project Structure
 
+```text
+main.py
+requirements.txt
+README.md
+data/
+  daily_metrics.csv
+  user_feedback.csv
+  known_issues.csv
+  release_notes.md
+war_room/
+  __init__.py
+  agents.py
+  mock_dashboard.py
+  models.py
+  orchestrator.py
+  tools.py
+  trace.py
 ```
-├── main.py                    # Entry point + offline simulation + output formatting
-├── requirements.txt
-├── README.md
-└── war_room/
-    ├── __init__.py
-    ├── mock_dashboard.py      # Mock metrics, KPIs, user feedback, success criteria
-    ├── models.py              # AgentVerdict, WarRoomOutcome, Decision enum
-    ├── agents.py              # 4 agent classes (PM, Data, Marketing, Risk/Critic)
-    ├── tools.py               # 4 programmatic tools (aggregate, anomaly, sentiment, trends)
-    └── orchestrator.py        # 3-phase war-room orchestration with feedback loop
-```
-
-## Output
-
-The system produces:
-
-- **Final Decision**: Proceed / Pause / Roll Back
-- **Decision Rationale**: Why this decision was reached
-- **Initial Verdicts**: Phase 1 independent assessments (PM, Data, Marketing)
-- **Critique**: Risk/Critic's challenge verdict with identified blind spots
-- **Revised Verdicts**: Phase 2b assessments after deliberation (showing what changed)
-- **Action Plan**: Sequenced, assignable steps
-- **Risks & Mitigations**: Identified risks with countermeasures
-- **Follow-up Monitoring**: Metrics and gates to track
-- **Dissenting Opinions**: Faithfully captured minority views

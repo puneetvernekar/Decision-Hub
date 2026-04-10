@@ -1,6 +1,5 @@
 # War Room -- multi-agent launch decision system
 
-import argparse
 import json
 import os
 import sys
@@ -133,10 +132,6 @@ def main():
     max_parallel = int(os.environ.get("MAX_PARALLEL_AGENTS", "3"))
     output_path = os.environ.get("OUTPUT_JSON_PATH", "decision_hub_output.json")
 
-    parser = argparse.ArgumentParser(description="War Room -- Launch Decision System")
-    parser.add_argument("--model", default=model, help=f"LLM model (default: {model})")
-    args = parser.parse_args()
-
     api_key = os.environ.get("OPENAI_API_KEY")
     base_url = os.environ.get("OPENAI_BASE_URL") or None
     if not api_key:
@@ -147,7 +142,7 @@ def main():
     from war_room.orchestrator import WarRoom
 
     client = OpenAI(api_key=api_key, base_url=base_url)
-    war_room = WarRoom(client=client, model=args.model, max_parallel=max_parallel)
+    war_room = WarRoom(client=client, model=model, max_parallel=max_parallel)
 
     dashboard = get_dashboard_snapshot()
     outcome = war_room.run(dashboard)
