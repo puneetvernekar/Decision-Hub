@@ -8,6 +8,27 @@ and outputs a final decision:
 - Pause
 - Roll Back
 
+## Project Structure
+
+```text
+main.py
+requirements.txt
+README.md
+data/
+  daily_metrics.csv
+  user_feedback.csv
+  known_issues.csv
+  release_notes.md
+war_room/
+  __init__.py
+  agents.py
+  mock_dashboard.py
+  models.py
+  orchestrator.py
+  tools.py
+  trace.py
+```
+
 ## Current Program Flow
 
 1. Phase 1: Independent analysis
@@ -19,7 +40,7 @@ and outputs a final decision:
 - Reviews Phase 1 verdicts and provides a stress-test verdict
 
 3. Phase 2b: Agent revision
-- Phase 1 agents revise after seeing peers and Risk and Critic
+- Phase 1 agents revise after seeing peers, Risk and Critic
 
 4. Phase 3: Director synthesis
 - Produces final decision, rationale, action plan, risks, comms plan, and monitoring list
@@ -45,7 +66,7 @@ cp .env.example .env
 
 Required:
 
-- OPENAI_API_KEY: API key for your OpenAI-compatible endpoint
+- OPENAI_API_KEY: API key for your OpenAI-compatible endpoint(I had used an Locally hosted model(gemma3:12b))
 
 Optional but commonly used:
 
@@ -54,9 +75,6 @@ Optional but commonly used:
 - MAX_PARALLEL_AGENTS: Parallelism for Phase 1 and Phase 2b (use 1 for stability)
 - OUTPUT_JSON_PATH: File path for final JSON output
 
-Note:
-
-- The trace log file path is currently fixed to decision-hub.log in code.
 
 Example .env values:
 
@@ -82,36 +100,10 @@ What happens end-to-end:
 - Trace log is written to decision-hub.log
 - Final JSON payload is written to path in OUTPUT_JSON_PATH
 
-## Example Commands To Reproduce Output
-
-Default run (uses .env):
-
-```bash
-python main.py
-```
 
 ## Output Files
 
 - decision-hub.log: phase-by-phase execution trace and per-agent JSON verdict dumps
 - decision_hub_output.json: final structured result consumed by downstream workflows
 
-## Project Structure
 
-```text
-main.py
-requirements.txt
-README.md
-data/
-  daily_metrics.csv
-  user_feedback.csv
-  known_issues.csv
-  release_notes.md
-war_room/
-  __init__.py
-  agents.py
-  mock_dashboard.py
-  models.py
-  orchestrator.py
-  tools.py
-  trace.py
-```
